@@ -18,16 +18,20 @@ class AIService:
         try:
             api_key = current_app.config.get('OPENAI_API_KEY')
             
-            if not api_key or len(api_key) < 20:  # Check for missing or too short key
-                logger.warning("OpenAI API key not properly configured")
-                return  # Skip initialization but don't raise error
+            if not api_key:
+                logger.warning("OPENAI_API_KEY not found in configuration")
+                return
+            
+            if len(api_key) < 20:  # Check for too short key
+                logger.warning(f"OpenAI API key appears to be invalid (length: {len(api_key)})")
+                return
             
             self.client = OpenAI(api_key=api_key)
             logger.info("OpenAI client initialized successfully")
             
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
-            self.client = None  # Set to None instead of raising
+            self.client = None
     
     def should_use_gpt_parsing(self, text: str, context_status: Optional[str] = None) -> bool:
         """
@@ -198,8 +202,9 @@ class AIService:
             return result
             
         except Exception as e:
-            logger.error(f"Failed to parse availability: {e}")
-            return {"error": str(e), "confidence": "low"}
+            logger.error(f"Failed to parse availability with OpenAI: {e}")
+            # Return fallback parsing for common availability formats
+            return self._fallback_availability_parsing(text, context)
     
     def suggest_venues(self, activity: str, location: str, requirements: Optional[List[str]] = None) -> Dict[str, Any]:
         """
@@ -327,6 +332,122 @@ class AIService:
         except Exception as e:
             logger.error(f"Failed to suggest central location: {e}")
             return {"error": str(e)}
+    
+    def _fallback_availability_parsing(self, text: str, context: Optional[Dict] = None) -> Dict[str, Any]:
+        """
+        Simple fallback availability parsing when OpenAI is unavailable.
+        """
+        import re
+        from datetime import datetime, timedelta
+        
+        logger.info("Using fallback availability parsing")
+        
+        text_lower = text.lower()
+        
+        # Common day patterns
+        days = {
+            'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4,
+            'friday': 5, 'saturday': 6, 'sunday': 0,
+            'mon': 1, 'tue': 2, 'wed': 3, 'thu': 4, 'fri': 5, 'sat': 6, 'sun': 0
+        }
+        
+        available_dates = []
+        current_year = datetime.now().year
+        
+        # Try to parse "Monday after 2pm", "Monday 2-5pm", etc.
+        for day_name, day_num in days.items():
+            if day_name in text_lower:
+                # Find next occurrence of this day
+                today = datetime.now()
+                days_ahead = (day_num - today.weekday()) % 7
+                if days_ahead == 0:  # Today
+                    days_ahead = 7  # Next week
+                target_date = today + timedelta(days=days_ahead)
+                
+                # Look for time patterns
+                time_patterns = [
+                    r'after (\d{1,2})(?::(\d{2}))?\s*(am|pm)?',
+                    r'from (\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?',
+                    r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?'
+                ]
+                
+                time_found = False
+                for pattern in time_patterns:
+                    matches = re.finditer(pattern, text_lower)
+                    for match in matches:
+                        groups = match.groups()
+                        if 'after' in pattern:
+                            # "after 2pm" - available from that time to end of day
+                            hour = int(groups[0])
+                            minute = int(groups[1]) if groups[1] else 0
+                            am_pm = groups[2] or 'pm'
+                            
+                            if am_pm == 'pm' and hour < 12:
+                                hour += 12
+                            elif am_pm == 'am' and hour == 12:
+                                hour = 0
+                            
+                            available_dates.append({
+                                "date": target_date.strftime('%Y-%m-%d'),
+                                "start_time": f"{hour:02d}:{minute:02d}",
+                                "end_time": "23:59",
+                                "all_day": False,
+                                "preference": "available"
+                            })
+                            time_found = True
+                        else:
+                            # Range like "2-5pm" or "from 2pm-5pm"
+                            start_hour = int(groups[0])
+                            start_minute = int(groups[1]) if groups[1] else 0
+                            start_am_pm = groups[2]
+                            end_hour = int(groups[3]) if len(groups) > 3 and groups[3] else None
+                            end_minute = int(groups[4]) if len(groups) > 4 and groups[4] else 0
+                            end_am_pm = groups[5] if len(groups) > 5 else groups[2]
+                            
+                            if end_hour:
+                                # Adjust hours for AM/PM
+                                if start_am_pm == 'pm' and start_hour < 12:
+                                    start_hour += 12
+                                elif start_am_pm == 'am' and start_hour == 12:
+                                    start_hour = 0
+                                
+                                if end_am_pm == 'pm' and end_hour < 12:
+                                    end_hour += 12
+                                elif end_am_pm == 'am' and end_hour == 12:
+                                    end_hour = 0
+                                
+                                available_dates.append({
+                                    "date": target_date.strftime('%Y-%m-%d'),
+                                    "start_time": f"{start_hour:02d}:{start_minute:02d}",
+                                    "end_time": f"{end_hour:02d}:{end_minute:02d}",
+                                    "all_day": False,
+                                    "preference": "available"
+                                })
+                                time_found = True
+                
+                # If day mentioned but no specific time, assume all day
+                if not time_found and day_name in text_lower:
+                    available_dates.append({
+                        "date": target_date.strftime('%Y-%m-%d'),
+                        "start_time": "09:00",
+                        "end_time": "17:00",
+                        "all_day": True,
+                        "preference": "available"
+                    })
+        
+        if available_dates:
+            return {
+                "available_dates": available_dates,
+                "unavailable_dates": [],
+                "notes": f"Parsed from: {text}",
+                "confidence": "medium"
+            }
+        else:
+            # If nothing parsed, return error
+            return {
+                "error": "Could not parse availability format",
+                "confidence": "low"
+            }
 
 
 # Global AI service instance (initialized lazily)
