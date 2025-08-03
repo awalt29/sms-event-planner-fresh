@@ -936,11 +936,11 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
             event.workflow_stage = 'selecting_venue'
             event.save()
             
-            # Generate venue suggestions using AI
+            # Generate venue suggestions using simplified AI
             try:
                 venue_suggestions = suggest_venues(event.location, activity)
                 
-                if venue_suggestions and venue_suggestions.get('success'):
+                if venue_suggestions.get('success'):
                     venues = venue_suggestions['venues'][:3]  # Top 3 suggestions
                     
                     response_text = f"🎯 Perfect! Looking for {activity} in {event.location}.\n\n"
@@ -948,17 +948,11 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
                     
                     for i, venue in enumerate(venues, 1):
                         response_text += f"{i}. {venue.get('name', 'Unknown venue')}\n"
-                        # Generate proper Google Maps search link if no website provided
-                        if venue.get('link') and venue['link'].strip():
-                            response_text += f"{venue['link']}\n"
-                        else:
-                            # Create a proper Google Maps search URL
-                            venue_name = venue.get('name', '').replace(' ', '+')
-                            location_clean = activity.replace(' ', '+')
-                            maps_url = f"https://www.google.com/maps/search/{venue_name}+{location_clean}+{event.location.replace(' ', '+')}"
-                            response_text += f"{maps_url}\n"
+                        response_text += f"{venue.get('link', '')}\n"
                         if venue.get('description'):
                             response_text += f"- {venue['description']}\n\n"
+                        else:
+                            response_text += "\n"
                     
                     response_text += "Select an option (1,2,3) or say:\n"
                     response_text += "- 'New list' for more options\n"
@@ -970,14 +964,25 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
                     event.save()
                     
                 else:
-                    response_text = f"I'm having trouble finding venues for {activity} in {event.location}. "
-                    response_text += "Please try a different activity or location."
+                    # AI failed - ask user to be more specific
+                    error_message = venue_suggestions.get('error', 'Please be more specific about the venue type.')
+                    response_text = f"🤔 {error_message}\n\n"
+                    response_text += "Try being more specific, like:\n"
+                    response_text += f"- 'Italian restaurant' instead of 'dinner'\n"
+                    response_text += f"- 'Sports bar' instead of 'drinks'\n"
+                    response_text += f"- 'Coffee shop' instead of 'casual meetup'\n\n"
+                    response_text += "What specific type of venue are you looking for?"
+                    
+                    # Stay in collecting_activity stage for retry
+                    event.workflow_stage = 'collecting_activity'
+                    event.save()
                 
                 resp.message(response_text)
                 
             except Exception as e:
-                logger.error(f"Error generating venue suggestions: {e}")
-                resp.message("Sorry, I'm having trouble finding venue suggestions right now. Please try again.")
+                logger.error(f"Error in venue suggestion process: {e}")
+                resp.message("I'm having trouble with venue suggestions right now. "
+                           "Please try being more specific about what type of venue you want.")
         
         elif stage == 'selecting_venue':
             # Handle venue selection or other options

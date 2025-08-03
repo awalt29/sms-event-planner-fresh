@@ -223,7 +223,7 @@ class AIService:
     
     def suggest_venues(self, activity: str, location: str, requirements: Optional[List[str]] = None) -> Dict[str, Any]:
         """
-        Get AI-powered venue suggestions.
+        Get AI-powered venue suggestions with fast, simplified processing.
         
         Args:
             activity: Type of activity/event
@@ -234,68 +234,89 @@ class AIService:
             dict: Venue suggestions and recommendations
         """
         try:
+            logger.info(f"Suggesting venues for '{activity}' in '{location}'")
+            
             # Initialize client if needed
             if self.client is None:
                 self._initialize_client()
             
             if self.client is None:
-                logger.warning("OpenAI client not available for venue suggestions")
+                logger.error("OpenAI client not available")
                 return {
-                    "success": False,
-                    "error": "AI service not available",
-                    "venues": []
+                    'success': False,
+                    'error': f'I need more details. Please be more specific about what type of {activity} you want in {location}.'
                 }
             
-            system_prompt = """
-            You are a venue recommendation assistant. Suggest 5 specific, real venues for the given activity and location.
-            When requirements mention "different from" certain venues, provide completely different options with different styles, price points, or vibes.
-            When requirements mention "alternative style venues" or "different price range options", diversify your suggestions significantly.
+            # Create a focused, minimal prompt for speed
+            prompt = f"""Suggest 3 popular venues for "{activity}" in {location}.
+
+Format as JSON only:
+{{
+  "venues": [
+    {{"name": "Venue Name", "description": "Brief description"}},
+    {{"name": "Venue Name", "description": "Brief description"}},
+    {{"name": "Venue Name", "description": "Brief description"}}
+  ]
+}}
+
+Requirements:
+- Focus on well-known, popular places
+- Keep descriptions under 10 words
+- Real venues that exist in {location}"""
             
-            Return a JSON object with this exact structure:
-            {
-                "success": true,
-                "venues": [
-                    {
-                        "name": "specific venue name",
-                        "link": "venue website URL if known, otherwise leave blank",
-                        "description": "brief description of why this venue works for the activity"
-                    }
-                ]
-            }
+            if requirements:
+                prompt += f"\n- Additional: {', '.join(requirements)}"
             
-            Focus on real, specific venues in the exact location mentioned. Include actual restaurant/bar names, not generic suggestions.
-            For the link field: Only include the venue's actual website URL if you know it. If you don't know the website, leave the link field as an empty string "".
-            Do NOT create Google Maps URLs - leave link empty if you don't know the actual website.
-            
-            If asked for different options, vary by: price range (budget/mid-range/upscale), cuisine type, ambiance (casual/trendy/traditional), location within the area.
-            """
-            
-            requirements_text = f" with requirements: {', '.join(requirements)}" if requirements else ""
-            user_prompt = f"Suggest 5 specific real venues for {activity} in {location}{requirements_text}"
-            
-            # Use higher temperature for more varied results when requirements specify "different"
-            temperature = 0.9 if requirements and any("different" in req.lower() for req in requirements) else 0.7
-            
+            # Use GPT-3.5-turbo for speed and set aggressive timeout
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=temperature
+                model="gpt-3.5-turbo",  # Much faster than GPT-4
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=300,  # Keep response small for speed
+                temperature=0.7,
+                timeout=5  # 5 second timeout - fail fast
             )
             
-            result = json.loads(response.choices[0].message.content)
-            logger.info(f"Venue suggestions generated for {activity} in {location}")
+            content = response.choices[0].message.content.strip()
+            logger.info(f"OpenAI response received: {len(content)} characters")
             
-            return result
+            # Parse JSON response
+            try:
+                venues_data = json.loads(content)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse OpenAI JSON response: {e}")
+                return {
+                    'success': False,
+                    'error': f'Please be more specific about what type of {activity} venue you want in {location}.'
+                }
+            
+            venues = venues_data.get('venues', [])
+            if not venues:
+                logger.warning("No venues returned from OpenAI")
+                return {
+                    'success': False,
+                    'error': f'No venues found. Please try a different activity or be more specific about {activity} in {location}.'
+                }
+            
+            # Add Google Maps search links to each venue
+            for venue in venues:
+                venue_name = venue.get('name', '').replace(' ', '+')
+                activity_clean = activity.replace(' ', '+')
+                location_clean = location.replace(' ', '+')
+                venue['link'] = f"https://www.google.com/maps/search/{venue_name}+{activity_clean}+{location_clean}"
+            
+            logger.info(f"Successfully generated {len(venues)} venue suggestions")
+            return {
+                'success': True,
+                'venues': venues
+            }
             
         except Exception as e:
-            logger.error(f"Failed to generate venue suggestions: {e}")
+            logger.error(f"Error suggesting venues with OpenAI: {e}")
+            
+            # Instead of fallback, ask user to be more specific
             return {
-                "success": False,
-                "error": str(e),
-                "venues": []
+                'success': False,
+                'error': f'I need more details. Please be more specific about what type of {activity} you want in {location}.'
             }
     
     def suggest_central_location(self, guest_locations: List[str]) -> Dict[str, Any]:
