@@ -1649,13 +1649,8 @@ def handle_confirmation_response(guest_state: GuestState, message: str, resp: Me
 def handle_new_user(phone_number: str, message: str, resp: MessagingResponse):
     """
     Handle messages from new/unknown users.
+    Always create a planner account and start the welcome flow.
     """
-    message_lower = message.lower().strip()
-    
-    # Define greetings and planning intents
-    greetings = ['hey', 'hi', 'hello', 'sup', 'yo', 'howdy']
-    planning_phrases = ['plan', 'organize', 'event', 'party', 'meeting']
-    
     # For any new user, create planner account and start welcome flow
     # This skips the intro message and goes straight to onboarding
     planner = Planner(
