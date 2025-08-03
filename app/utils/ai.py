@@ -26,11 +26,13 @@ class AIService:
                 logger.warning(f"OpenAI API key appears to be invalid (length: {len(api_key)})")
                 return
             
+            # Initialize with minimal configuration to avoid version issues
             self.client = OpenAI(api_key=api_key)
             logger.info("OpenAI client initialized successfully")
             
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
+            logger.info("Will use fallback parsing instead")
             self.client = None
     
     def should_use_gpt_parsing(self, text: str, context_status: Optional[str] = None) -> bool:

@@ -283,6 +283,16 @@ Reply with your availability. You can say things like:
 - 'Friday all day, Saturday evening'
 - 'Friday after 3pm'"""
 
+            # Check if guest phone number is the same as Twilio number (self-SMS prevention)
+            from flask import current_app
+            twilio_number = current_app.config.get('TWILIO_NUMBER')
+            if twilio_number and guest.phone_number == twilio_number:
+                logger.info(f"Skipping SMS to self: {guest.phone_number} (same as Twilio number)")
+                # Mark as sent to avoid retries, but don't actually send
+                guest.invitation_sent_at = db.func.now()
+                guest.save()
+                return True
+
             result = send_sms(guest.phone_number, message)
             
             if result['success']:
