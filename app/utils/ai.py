@@ -312,13 +312,13 @@ Requirements:
             if requirements:
                 prompt += f"\n- Additional requirements: {', '.join(requirements)}"
             
-            # Use GPT-3.5-turbo for speed with aggressive timeout
+            # Use GPT-3.5-turbo with generous timeout for broad category processing
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=400,
                 temperature=0.7,
-                timeout=5  # Fail fast if slow
+                timeout=15  # Generous timeout for broad terms like "chinese food"
             )
             
             content = response.choices[0].message.content.strip()
