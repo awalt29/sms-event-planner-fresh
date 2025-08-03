@@ -35,17 +35,23 @@ class AIService:
                 self.client = None
                 return
             
-            # Try to create client with explicit parameters only
+            # Try to create client with explicit parameters only (v1.35.0+ compatible)
             logger.info("Attempting to initialize OpenAI client...")
-            self.client = OpenAI(
-                api_key=api_key,
-                timeout=30.0,
-                max_retries=2
-            )
+            
+            # Only use parameters supported in v1.35.0+
+            client_kwargs = {
+                'api_key': api_key,
+                'timeout': 30.0,
+                'max_retries': 2
+            }
+            
+            # Explicitly avoid any deprecated parameters
+            self.client = OpenAI(**client_kwargs)
             logger.info("OpenAI client initialized successfully")
             
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
             logger.info("Will use fallback parsing instead")
             self.client = None
     
