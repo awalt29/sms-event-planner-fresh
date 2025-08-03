@@ -285,11 +285,7 @@ Add one guest at a time.
                 return
             
             # Otherwise try to parse as detailed event information
-            # But first check if it's a broad activity description
-            broad_check = is_broad_activity(message)
-            if broad_check['is_broad']:
-                resp.message(f'"{message}" is a bit broad for event planning. Try being more specific like:\n\n"{broad_check["suggestion"]}"\n\nOr send "plan event" to start the step-by-step planner!')
-                return
+            # Let the AI handle all activity descriptions intelligently
             
             event_service = EventService()
             result = event_service.create_event_from_text(planner.id, message)
