@@ -6,6 +6,13 @@ from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger(__name__)
 
+# Log OpenAI version for debugging
+try:
+    import openai
+    logger.info(f"OpenAI library version: {openai.__version__}")
+except Exception as e:
+    logger.error(f"Error checking OpenAI version: {e}")
+
 
 class AIService:
     """Service class for handling AI operations with OpenAI."""
@@ -20,14 +27,21 @@ class AIService:
             
             if not api_key:
                 logger.warning("OPENAI_API_KEY not found in configuration")
+                self.client = None
                 return
             
             if len(api_key) < 20:  # Check for too short key
                 logger.warning(f"OpenAI API key appears to be invalid (length: {len(api_key)})")
+                self.client = None
                 return
             
-            # Initialize with minimal configuration to avoid version issues
-            self.client = OpenAI(api_key=api_key)
+            # Try to create client with explicit parameters only
+            logger.info("Attempting to initialize OpenAI client...")
+            self.client = OpenAI(
+                api_key=api_key,
+                timeout=30.0,
+                max_retries=2
+            )
             logger.info("OpenAI client initialized successfully")
             
         except Exception as e:
