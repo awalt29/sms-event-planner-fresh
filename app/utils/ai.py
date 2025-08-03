@@ -223,10 +223,10 @@ class AIService:
     
     def suggest_venues(self, activity: str, location: str, requirements: Optional[List[str]] = None) -> Dict[str, Any]:
         """
-        Get AI-powered venue suggestions with fast, simplified processing.
+        Get AI-powered venue suggestions with intelligent broad term handling.
         
         Args:
-            activity: Type of activity/event
+            activity: Type of activity/event (accepts broad terms like "chinese food")
             location: General location/area
             requirements: List of special requirements
             
@@ -247,26 +247,19 @@ class AIService:
                     'error': f'I need more details. Please be more specific about what type of {activity} you want in {location}.'
                 }
             
-            # Check if the activity is too broad and needs refinement
-            broad_activities = ['chinese food', 'italian food', 'thai food', 'mexican food', 'japanese food', 'indian food', 'food', 'dinner', 'lunch', 'drinks', 'bar']
+            # Smart conversion of broad food terms to specific venue types for better AI processing
+            processed_activity = activity
             activity_lower = activity.lower().strip()
             
-            if activity_lower in broad_activities:
-                # For broad food categories, suggest they be more specific
-                if 'food' in activity_lower or activity_lower in ['dinner', 'lunch']:
-                    return {
-                        'success': False,
-                        'error': f'Please be more specific about "{activity}". Try something like:\n- "Chinese restaurant"\n- "Italian restaurant"\n- "Thai restaurant"\n- "Sushi restaurant"\n- "Sports bar"\n- "Coffee shop"'
-                    }
-            
-            # Create a focused, minimal prompt for speed with stricter formatting
             # Convert broad food terms to restaurant terms for better AI processing
-            processed_activity = activity
             if activity_lower.endswith(' food'):
                 processed_activity = activity_lower.replace(' food', ' restaurant')
             elif activity_lower in ['drinks', 'bar']:
                 processed_activity = 'bar or restaurant'
+            elif activity_lower in ['dinner', 'lunch']:
+                processed_activity = f'{activity_lower} restaurant'
                 
+            # Create a focused, minimal prompt for speed with intelligent broad term handling
             prompt = f"""Suggest exactly 3 popular venues for "{processed_activity}" in {location}.
 
 Return ONLY this JSON format (no other text):
@@ -283,7 +276,8 @@ Rules:
 - Focus on well-known, real places in {location}
 - Keep descriptions under 8 words
 - Use actual venue names that exist
-- No explanatory text, just the JSON"""
+- No explanatory text, just the JSON
+- If the activity is broad (like "chinese restaurant"), suggest diverse Chinese restaurants"""
             
             if requirements:
                 prompt += f"\n- Additional requirements: {', '.join(requirements)}"
@@ -592,27 +586,18 @@ def is_broad_activity(activity: str) -> Dict[str, Any]:
 
 def suggest_venues(activity: str, location: str, requirements: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Convenience function for venue suggestions with broad activity detection.
+    Convenience function for venue suggestions that accepts all activity types.
     
     Args:
-        activity: The activity description
+        activity: The activity description (accepts broad terms like "chinese food")
         location: The location for the venue
         requirements: Optional list of additional requirements
         
     Returns:
-        dict: Venue suggestions or error if activity is too broad
+        dict: Venue suggestions with AI interpreting broad terms intelligently
     """
-    # Check if activity is too broad first
-    broad_check = is_broad_activity(activity)
-    if broad_check['is_broad']:
-        return {
-            'success': False,
-            'error': f'"{activity}" is too broad. Try being more specific like: "{broad_check["suggestion"]}"',
-            'suggestion': broad_check['suggestion'],
-            'is_broad': True
-        }
-    
-    # Proceed with AI venue suggestions
+    # Accept all activities and let AI interpret them intelligently
+    # No more broad term rejection - the AI is smart enough to handle "chinese food" -> "Chinese restaurants"
     return get_ai_service().suggest_venues(activity, location, requirements)
 
 

@@ -937,13 +937,8 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
                 resp.message("Please provide a more detailed activity description (e.g., 'boozy brunch', 'Chinese restaurant').")
                 return
             
-            # Check for overly broad terms using enhanced detection
-            from app.utils.ai import is_broad_activity
-            
-            broad_check = is_broad_activity(activity)
-            if broad_check['is_broad']:
-                resp.message(f'"{activity}" is a bit broad. Try being more specific like:\n\n"{broad_check["suggestion"]}"\n\nWhat specific type of venue are you looking for?')
-                return
+            # Accept all activity inputs and let AI interpret them intelligently
+            # No more broad term rejection - just process everything
             
             # Store activity in event notes or add an activity field
             event.activity = activity  # Assuming we'll add this field to the Event model
