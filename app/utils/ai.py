@@ -26,26 +26,44 @@ class AIService:
             api_key = current_app.config.get('OPENAI_API_KEY')
             
             if not api_key:
-                logger.warning("OPENAI_API_KEY not found in configuration")
+                logger.error("OPENAI_API_KEY not found in configuration")
                 self.client = None
                 return
             
             if len(api_key) < 20:  # Check for too short key
-                logger.warning(f"OpenAI API key appears to be invalid (length: {len(api_key)})")
+                logger.error(f"OpenAI API key appears to be invalid (length: {len(api_key)})")
                 self.client = None
                 return
             
-            # Try to create client with ONLY api_key parameter to avoid conflicts
+            # Detailed logging for debugging
             logger.info("Attempting to initialize OpenAI client...")
+            logger.info(f"API key length: {len(api_key)}")
+            logger.info(f"API key prefix: {api_key[:10]}...")
             
-            # Use minimal initialization to avoid any parameter conflicts
+            # Try to create client with ONLY api_key parameter to avoid conflicts
             self.client = OpenAI(api_key=api_key)
-            logger.info("OpenAI client initialized successfully")
+            logger.info("OpenAI client created successfully")
+            
+            # Test the client with a simple request to verify it works
+            try:
+                test_response = self.client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": "Say 'test'"}],
+                    max_tokens=5,
+                    timeout=10
+                )
+                logger.info("OpenAI client test successful - API is working")
+                
+            except Exception as test_error:
+                logger.error(f"OpenAI client test failed: {test_error}")
+                logger.error(f"Test error type: {type(test_error).__name__}")
+                # Still keep the client - maybe it's just a temporary network issue
+                # Don't set client to None here, let individual requests handle failures
             
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
             logger.error(f"Error type: {type(e).__name__}")
-            logger.info("Will use fallback parsing instead")
+            logger.error(f"Will use fallback parsing instead")
             self.client = None
     
     def should_use_gpt_parsing(self, text: str, context_status: Optional[str] = None) -> bool:
@@ -313,6 +331,7 @@ Requirements:
                 prompt += f"\n- Additional requirements: {', '.join(requirements)}"
             
             # Use GPT-3.5-turbo with generous timeout for broad category processing
+            logger.info("Making OpenAI API request...")
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
@@ -322,11 +341,12 @@ Requirements:
             )
             
             content = response.choices[0].message.content.strip()
-            logger.info(f"OpenAI response received: {len(content)} characters")
+            logger.info(f"OpenAI response received successfully: {len(content)} characters")
             
             # Parse JSON response
             try:
                 venues_data = json.loads(content)
+                logger.info("JSON parsing successful")
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse OpenAI JSON response: {e}")
                 logger.error(f"Raw response: {content}")
@@ -356,7 +376,10 @@ Requirements:
             
         except Exception as e:
             logger.error(f"Error suggesting venues with OpenAI: {e}")
-            return self._create_fallback_venue_suggestions(activity, location)
+            logger.error(f"Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            return self._create_fallback_venue_suggestions(processed_activity, location)
 
     def _create_fallback_venue_suggestions(self, activity: str, location: str) -> Dict[str, Any]:
         """
