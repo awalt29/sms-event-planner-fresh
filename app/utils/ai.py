@@ -247,33 +247,54 @@ class AIService:
                     'error': f'I need more details. Please be more specific about what type of {activity} you want in {location}.'
                 }
             
-            # Create a focused, minimal prompt for speed
-            prompt = f"""Suggest 3 popular venues for "{activity}" in {location}.
+            # Check if the activity is too broad and needs refinement
+            broad_activities = ['chinese food', 'italian food', 'thai food', 'mexican food', 'japanese food', 'indian food', 'food', 'dinner', 'lunch', 'drinks', 'bar']
+            activity_lower = activity.lower().strip()
+            
+            if activity_lower in broad_activities:
+                # For broad food categories, suggest they be more specific
+                if 'food' in activity_lower or activity_lower in ['dinner', 'lunch']:
+                    return {
+                        'success': False,
+                        'error': f'Please be more specific about "{activity}". Try something like:\n- "Chinese restaurant"\n- "Italian restaurant"\n- "Thai restaurant"\n- "Sushi restaurant"\n- "Sports bar"\n- "Coffee shop"'
+                    }
+            
+            # Create a focused, minimal prompt for speed with stricter formatting
+            # Convert broad food terms to restaurant terms for better AI processing
+            processed_activity = activity
+            if activity_lower.endswith(' food'):
+                processed_activity = activity_lower.replace(' food', ' restaurant')
+            elif activity_lower in ['drinks', 'bar']:
+                processed_activity = 'bar or restaurant'
+                
+            prompt = f"""Suggest exactly 3 popular venues for "{processed_activity}" in {location}.
 
-Format as JSON only:
+Return ONLY this JSON format (no other text):
 {{
   "venues": [
-    {{"name": "Venue Name", "description": "Brief description"}},
-    {{"name": "Venue Name", "description": "Brief description"}},
-    {{"name": "Venue Name", "description": "Brief description"}}
+    {{"name": "First Venue Name", "description": "Brief description"}},
+    {{"name": "Second Venue Name", "description": "Brief description"}},
+    {{"name": "Third Venue Name", "description": "Brief description"}}
   ]
 }}
 
-Requirements:
-- Focus on well-known, popular places
-- Keep descriptions under 10 words
-- Real venues that exist in {location}"""
+Rules:
+- Must return exactly 3 venues
+- Focus on well-known, real places in {location}
+- Keep descriptions under 8 words
+- Use actual venue names that exist
+- No explanatory text, just the JSON"""
             
             if requirements:
-                prompt += f"\n- Additional: {', '.join(requirements)}"
+                prompt += f"\n- Additional requirements: {', '.join(requirements)}"
             
-            # Use GPT-3.5-turbo for speed and set aggressive timeout
+            # Use GPT-3.5-turbo for speed and set more generous limits
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",  # Much faster than GPT-4
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=300,  # Keep response small for speed
-                temperature=0.7,
-                timeout=5  # 5 second timeout - fail fast
+                max_tokens=400,  # Slightly increased for better JSON formatting
+                temperature=0.8,  # Higher temp for more variety
+                timeout=8  # Slightly longer timeout for better results
             )
             
             content = response.choices[0].message.content.strip()

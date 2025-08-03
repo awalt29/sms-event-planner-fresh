@@ -931,6 +931,27 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
                 resp.message("Please provide a more detailed activity description (e.g., 'boozy brunch', 'Chinese restaurant').")
                 return
             
+            # Check for overly broad terms and guide users to be more specific
+            activity_lower = activity.lower().strip()
+            broad_terms = {
+                'chinese food': 'Chinese restaurant',
+                'italian food': 'Italian restaurant', 
+                'thai food': 'Thai restaurant',
+                'mexican food': 'Mexican restaurant',
+                'japanese food': 'Japanese restaurant or sushi restaurant',
+                'indian food': 'Indian restaurant',
+                'food': 'specific restaurant type (e.g., "pizza place", "burger joint")',
+                'dinner': 'specific restaurant type (e.g., "steakhouse", "seafood restaurant")',
+                'lunch': 'specific restaurant type (e.g., "sandwich shop", "salad bar")',
+                'drinks': 'specific bar type (e.g., "sports bar", "cocktail lounge")',
+                'bar': 'specific bar type (e.g., "sports bar", "wine bar", "rooftop bar")'
+            }
+            
+            if activity_lower in broad_terms:
+                suggestion = broad_terms[activity_lower]
+                resp.message(f'"{activity}" is a bit broad. Try being more specific like:\n\n"{suggestion}"\n\nWhat specific type of venue are you looking for?')
+                return
+            
             # Store activity in event notes or add an activity field
             event.activity = activity  # Assuming we'll add this field to the Event model
             event.workflow_stage = 'selecting_venue'
