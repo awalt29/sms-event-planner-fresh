@@ -3,7 +3,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 from app.models import db, Planner, Event, Contact, Guest, GuestState, Availability
 from app.utils.sms import create_twiml_response, send_sms
 from app.utils.phone import normalize_phone, format_phone_display
-from app.utils.ai import parse_event_input, parse_availability, suggest_venues
+from app.utils.ai import parse_event_input, parse_availability, suggest_venues, is_broad_activity
 from app.services.event_service import EventService
 from app.services.guest_service import GuestService
 from datetime import datetime, date, time
@@ -285,6 +285,12 @@ Add one guest at a time.
                 return
             
             # Otherwise try to parse as detailed event information
+            # But first check if it's a broad activity description
+            broad_check = is_broad_activity(message)
+            if broad_check['is_broad']:
+                resp.message(f'"{message}" is a bit broad for event planning. Try being more specific like:\n\n"{broad_check["suggestion"]}"\n\nOr send "plan event" to start the step-by-step planner!')
+                return
+            
             event_service = EventService()
             result = event_service.create_event_from_text(planner.id, message)
             
@@ -935,20 +941,48 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
             activity_lower = activity.lower().strip()
             broad_terms = {
                 'chinese food': 'Chinese restaurant',
-                'italian food': 'Italian restaurant', 
-                'thai food': 'Thai restaurant',
+                'chinese': 'Chinese restaurant',
+                'italian food': 'Italian restaurant',
+                'italian': 'Italian restaurant',
+                'thai food': 'Thai restaurant', 
+                'thai': 'Thai restaurant',
                 'mexican food': 'Mexican restaurant',
+                'mexican': 'Mexican restaurant',
                 'japanese food': 'Japanese restaurant or sushi restaurant',
+                'japanese': 'Japanese restaurant or sushi restaurant',
                 'indian food': 'Indian restaurant',
+                'indian': 'Indian restaurant',
                 'food': 'specific restaurant type (e.g., "pizza place", "burger joint")',
                 'dinner': 'specific restaurant type (e.g., "steakhouse", "seafood restaurant")',
                 'lunch': 'specific restaurant type (e.g., "sandwich shop", "salad bar")',
                 'drinks': 'specific bar type (e.g., "sports bar", "cocktail lounge")',
-                'bar': 'specific bar type (e.g., "sports bar", "wine bar", "rooftop bar")'
+                'bar': 'specific bar type (e.g., "sports bar", "wine bar", "rooftop bar")',
+                'eat': 'specific restaurant type (e.g., "pizza place", "burger joint")',
+                'eating': 'specific restaurant type (e.g., "pizza place", "burger joint")',
+                'restaurant': 'specific restaurant type (e.g., "Italian restaurant", "pizza place")',
+                'cuisine': 'specific restaurant type (e.g., "Thai restaurant", "burger joint")'
             }
             
+            # Check if the activity contains any broad terms
+            activity_is_broad = False
+            matched_term = None
+            suggestion = None
+            
+            # Direct match first
             if activity_lower in broad_terms:
+                activity_is_broad = True
+                matched_term = activity_lower
                 suggestion = broad_terms[activity_lower]
+            else:
+                # Check if activity contains broad terms
+                for broad_term, broad_suggestion in broad_terms.items():
+                    if broad_term in activity_lower and len(activity_lower.split()) <= 2:
+                        activity_is_broad = True
+                        matched_term = broad_term
+                        suggestion = broad_suggestion
+                        break
+            
+            if activity_is_broad:
                 resp.message(f'"{activity}" is a bit broad. Try being more specific like:\n\n"{suggestion}"\n\nWhat specific type of venue are you looking for?')
                 return
             

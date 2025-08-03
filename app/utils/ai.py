@@ -529,8 +529,90 @@ def parse_availability(text: str, context: Optional[Dict] = None) -> Dict[str, A
     return get_ai_service().parse_availability(text, context)
 
 
+def is_broad_activity(activity: str) -> Dict[str, Any]:
+    """
+    Check if an activity description is too broad and provide suggestions.
+    
+    Args:
+        activity: The activity description to check
+        
+    Returns:
+        dict: Contains 'is_broad', 'suggestion', and 'matched_term'
+    """
+    activity_lower = activity.lower().strip()
+    
+    broad_terms = {
+        'chinese food': 'Chinese restaurant',
+        'chinese': 'Chinese restaurant', 
+        'italian food': 'Italian restaurant',
+        'italian': 'Italian restaurant',
+        'thai food': 'Thai restaurant',
+        'thai': 'Thai restaurant',
+        'mexican food': 'Mexican restaurant',
+        'mexican': 'Mexican restaurant',
+        'japanese food': 'Japanese restaurant or sushi restaurant',
+        'japanese': 'Japanese restaurant or sushi restaurant',
+        'indian food': 'Indian restaurant',
+        'indian': 'Indian restaurant',
+        'food': 'specific restaurant type (e.g., "pizza place", "burger joint")',
+        'dinner': 'specific restaurant type (e.g., "steakhouse", "seafood restaurant")',
+        'lunch': 'specific restaurant type (e.g., "sandwich shop", "salad bar")',
+        'drinks': 'specific bar type (e.g., "sports bar", "cocktail lounge")',
+        'bar': 'specific bar type (e.g., "sports bar", "wine bar", "rooftop bar")',
+        'eat': 'specific restaurant type (e.g., "pizza place", "burger joint")',
+        'eating': 'specific restaurant type (e.g., "pizza place", "burger joint")', 
+        'restaurant': 'specific restaurant type (e.g., "Italian restaurant", "pizza place")',
+        'cuisine': 'specific restaurant type (e.g., "Thai restaurant", "burger joint")'
+    }
+    
+    # Direct match first
+    if activity_lower in broad_terms:
+        return {
+            'is_broad': True,
+            'suggestion': broad_terms[activity_lower],
+            'matched_term': activity_lower
+        }
+    
+    # Check if activity contains broad terms (for short phrases)
+    if len(activity_lower.split()) <= 2:
+        for broad_term, suggestion in broad_terms.items():
+            if broad_term in activity_lower:
+                return {
+                    'is_broad': True,
+                    'suggestion': suggestion,
+                    'matched_term': broad_term
+                }
+    
+    return {
+        'is_broad': False,
+        'suggestion': None,
+        'matched_term': None
+    }
+
+
 def suggest_venues(activity: str, location: str, requirements: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Convenience function for venue suggestions."""
+    """
+    Convenience function for venue suggestions with broad activity detection.
+    
+    Args:
+        activity: The activity description
+        location: The location for the venue
+        requirements: Optional list of additional requirements
+        
+    Returns:
+        dict: Venue suggestions or error if activity is too broad
+    """
+    # Check if activity is too broad first
+    broad_check = is_broad_activity(activity)
+    if broad_check['is_broad']:
+        return {
+            'success': False,
+            'error': f'"{activity}" is too broad. Try being more specific like: "{broad_check["suggestion"]}"',
+            'suggestion': broad_check['suggestion'],
+            'is_broad': True
+        }
+    
+    # Proceed with AI venue suggestions
     return get_ai_service().suggest_venues(activity, location, requirements)
 
 
