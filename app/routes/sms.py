@@ -938,7 +938,7 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
             
             # Generate venue suggestions using simplified AI
             try:
-                venue_suggestions = suggest_venues(event.location, activity)
+                venue_suggestions = suggest_venues(activity, event.location)
                 
                 if venue_suggestions.get('success'):
                     venues = venue_suggestions['venues'][:3]  # Top 3 suggestions
@@ -1056,7 +1056,7 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
                         requirements.append("alternative style venues")
                         requirements.append("different price range options")
                     
-                    venue_suggestions = suggest_venues(event.location, event.activity, requirements)
+                    venue_suggestions = suggest_venues(event.activity, event.location, requirements)
                     
                     if venue_suggestions and venue_suggestions.get('success'):
                         venues = venue_suggestions['venues'][:3]  # Top 3 suggestions
