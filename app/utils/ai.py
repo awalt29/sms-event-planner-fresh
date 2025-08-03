@@ -223,7 +223,7 @@ class AIService:
     
     def suggest_venues(self, activity: str, location: str, requirements: Optional[List[str]] = None) -> Dict[str, Any]:
         """
-        Get AI-powered venue suggestions with intelligent broad term handling.
+        Get AI-powered venue suggestions with intelligent broad term conversion.
         
         Args:
             activity: Type of activity/event (accepts broad terms like "chinese food")
@@ -231,10 +231,56 @@ class AIService:
             requirements: List of special requirements
             
         Returns:
-            dict: Venue suggestions and recommendations
+            dict: Venue suggestions with intelligent fallback handling
         """
         try:
             logger.info(f"Suggesting venues for '{activity}' in '{location}'")
+            
+            # SMART CONVERSION: Convert broad food terms to specific venue types
+            activity_lower = activity.lower().strip()
+            
+            # Comprehensive mapping of broad terms to specific venue types
+            broad_to_specific = {
+                'chinese food': 'Chinese restaurant',
+                'chinese': 'Chinese restaurant',
+                'italian food': 'Italian restaurant', 
+                'italian': 'Italian restaurant',
+                'thai food': 'Thai restaurant',
+                'thai': 'Thai restaurant',
+                'mexican food': 'Mexican restaurant',
+                'mexican': 'Mexican restaurant',
+                'indian food': 'Indian restaurant',
+                'indian': 'Indian restaurant',
+                'japanese food': 'Japanese restaurant',
+                'japanese': 'Japanese restaurant',
+                'korean food': 'Korean restaurant',
+                'korean': 'Korean restaurant',
+                'french food': 'French restaurant',
+                'french': 'French restaurant',
+                'vietnamese food': 'Vietnamese restaurant',
+                'vietnamese': 'Vietnamese restaurant',
+                'pizza': 'pizza restaurant',
+                'sushi': 'sushi restaurant',
+                'drinks': 'bar or cocktail lounge',
+                'drinking': 'bar or cocktail lounge',
+                'dinner': 'restaurant',
+                'lunch': 'restaurant',
+                'breakfast': 'breakfast restaurant',
+                'brunch': 'brunch restaurant',
+                'coffee': 'coffee shop',
+                'dessert': 'dessert shop or cafe',
+                'seafood': 'seafood restaurant',
+                'steakhouse': 'steakhouse',
+                'bbq': 'barbecue restaurant',
+                'fast food': 'fast food restaurant',
+                'food': 'restaurant'
+            }
+            
+            # Convert broad term to specific if found
+            processed_activity = activity
+            if activity_lower in broad_to_specific:
+                processed_activity = broad_to_specific[activity_lower]
+                logger.info(f"Converted '{activity}' to '{processed_activity}' for better venue suggestions")
             
             # Initialize client if needed
             if self.client is None:
@@ -242,53 +288,37 @@ class AIService:
             
             if self.client is None:
                 logger.error("OpenAI client not available")
-                return {
-                    'success': False,
-                    'error': f'I need more details. Please be more specific about what type of {activity} you want in {location}.'
-                }
+                return self._create_fallback_venue_suggestions(processed_activity, location)
             
-            # Smart conversion of broad food terms to specific venue types for better AI processing
-            processed_activity = activity
-            activity_lower = activity.lower().strip()
-            
-            # Convert broad food terms to restaurant terms for better AI processing
-            if activity_lower.endswith(' food'):
-                processed_activity = activity_lower.replace(' food', ' restaurant')
-            elif activity_lower in ['drinks', 'bar']:
-                processed_activity = 'bar or restaurant'
-            elif activity_lower in ['dinner', 'lunch']:
-                processed_activity = f'{activity_lower} restaurant'
-                
-            # Create a focused, minimal prompt for speed with intelligent broad term handling
+            # Create optimized prompt for speed and accuracy
             prompt = f"""Suggest exactly 3 popular venues for "{processed_activity}" in {location}.
 
-Return ONLY this JSON format (no other text):
+Return ONLY this JSON format:
 {{
   "venues": [
-    {{"name": "First Venue Name", "description": "Brief description"}},
-    {{"name": "Second Venue Name", "description": "Brief description"}},
-    {{"name": "Third Venue Name", "description": "Brief description"}}
+    {{"name": "Venue Name", "description": "Brief description"}},
+    {{"name": "Venue Name", "description": "Brief description"}},
+    {{"name": "Venue Name", "description": "Brief description"}}
   ]
 }}
 
-Rules:
-- Must return exactly 3 venues
-- Focus on well-known, real places in {location}
+Requirements:
+- Focus on well-known, popular places that actually exist
 - Keep descriptions under 8 words
-- Use actual venue names that exist
-- No explanatory text, just the JSON
-- If the activity is broad (like "chinese restaurant"), suggest diverse Chinese restaurants"""
+- Real venues in {location} area
+- Exactly 3 venues, no more, no less
+- No explanatory text, just the JSON"""
             
             if requirements:
                 prompt += f"\n- Additional requirements: {', '.join(requirements)}"
             
-            # Use GPT-3.5-turbo for speed and set more generous limits
+            # Use GPT-3.5-turbo for speed with aggressive timeout
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",  # Much faster than GPT-4
+                model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=400,  # Slightly increased for better JSON formatting
-                temperature=0.8,  # Higher temp for more variety
-                timeout=8  # Slightly longer timeout for better results
+                max_tokens=400,
+                temperature=0.7,
+                timeout=5  # Fail fast if slow
             )
             
             content = response.choices[0].message.content.strip()
@@ -299,23 +329,22 @@ Rules:
                 venues_data = json.loads(content)
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse OpenAI JSON response: {e}")
-                return {
-                    'success': False,
-                    'error': f'Please be more specific about what type of {activity} venue you want in {location}.'
-                }
+                logger.error(f"Raw response: {content}")
+                return self._create_fallback_venue_suggestions(processed_activity, location)
             
             venues = venues_data.get('venues', [])
-            if not venues:
-                logger.warning("No venues returned from OpenAI")
-                return {
-                    'success': False,
-                    'error': f'No venues found. Please try a different activity or be more specific about {activity} in {location}.'
-                }
+            
+            # Ensure we have exactly 3 venues
+            if len(venues) < 3:
+                logger.warning(f"Only got {len(venues)} venues, creating fallback suggestions")
+                return self._create_fallback_venue_suggestions(processed_activity, location)
+            elif len(venues) > 3:
+                venues = venues[:3]  # Trim to exactly 3
             
             # Add Google Maps search links to each venue
             for venue in venues:
                 venue_name = venue.get('name', '').replace(' ', '+')
-                activity_clean = activity.replace(' ', '+')
+                activity_clean = processed_activity.replace(' ', '+')
                 location_clean = location.replace(' ', '+')
                 venue['link'] = f"https://www.google.com/maps/search/{venue_name}+{activity_clean}+{location_clean}"
             
@@ -327,11 +356,52 @@ Rules:
             
         except Exception as e:
             logger.error(f"Error suggesting venues with OpenAI: {e}")
+            return self._create_fallback_venue_suggestions(activity, location)
+
+    def _create_fallback_venue_suggestions(self, activity: str, location: str) -> Dict[str, Any]:
+        """
+        Create helpful venue suggestions when AI fails or is unavailable.
+        
+        Args:
+            activity: The activity description
+            location: The location for the event
             
-            # Instead of fallback, ask user to be more specific
+        Returns:
+            dict: Success status with Google Maps search suggestions
+        """
+        try:
+            # Create intelligent Google Maps searches
+            activity_clean = activity.replace(' ', '+')
+            location_clean = location.replace(' ', '+')
+            
+            venues = [
+                {
+                    "name": f"Best {activity} in {location}",
+                    "description": f"Highly rated {activity} venues",
+                    "link": f"https://www.google.com/maps/search/best+{activity_clean}+{location_clean}"
+                },
+                {
+                    "name": f"Popular {activity} spots",
+                    "description": f"Discover top {activity} locations",
+                    "link": f"https://www.google.com/maps/search/popular+{activity_clean}+{location_clean}"
+                },
+                {
+                    "name": f"{activity} near me",
+                    "description": f"Find nearby {activity} options",
+                    "link": f"https://www.google.com/maps/search/{activity_clean}+near+{location_clean}"
+                }
+            ]
+            
+            return {
+                'success': True,
+                'venues': venues
+            }
+            
+        except Exception as e:
+            logger.error(f"Error creating fallback suggestions: {e}")
             return {
                 'success': False,
-                'error': f'I need more details. Please be more specific about what type of {activity} you want in {location}.'
+                'error': f'Please try being more specific about {activity} in {location}.'
             }
     
     def suggest_central_location(self, guest_locations: List[str]) -> Dict[str, Any]:
