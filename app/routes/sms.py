@@ -937,53 +937,12 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
                 resp.message("Please provide a more detailed activity description (e.g., 'boozy brunch', 'Chinese restaurant').")
                 return
             
-            # Check for overly broad terms and guide users to be more specific
-            activity_lower = activity.lower().strip()
-            broad_terms = {
-                'chinese food': 'Chinese restaurant',
-                'chinese': 'Chinese restaurant',
-                'italian food': 'Italian restaurant',
-                'italian': 'Italian restaurant',
-                'thai food': 'Thai restaurant', 
-                'thai': 'Thai restaurant',
-                'mexican food': 'Mexican restaurant',
-                'mexican': 'Mexican restaurant',
-                'japanese food': 'Japanese restaurant or sushi restaurant',
-                'japanese': 'Japanese restaurant or sushi restaurant',
-                'indian food': 'Indian restaurant',
-                'indian': 'Indian restaurant',
-                'food': 'specific restaurant type (e.g., "pizza place", "burger joint")',
-                'dinner': 'specific restaurant type (e.g., "steakhouse", "seafood restaurant")',
-                'lunch': 'specific restaurant type (e.g., "sandwich shop", "salad bar")',
-                'drinks': 'specific bar type (e.g., "sports bar", "cocktail lounge")',
-                'bar': 'specific bar type (e.g., "sports bar", "wine bar", "rooftop bar")',
-                'eat': 'specific restaurant type (e.g., "pizza place", "burger joint")',
-                'eating': 'specific restaurant type (e.g., "pizza place", "burger joint")',
-                'restaurant': 'specific restaurant type (e.g., "Italian restaurant", "pizza place")',
-                'cuisine': 'specific restaurant type (e.g., "Thai restaurant", "burger joint")'
-            }
+            # Check for overly broad terms using enhanced detection
+            from app.utils.ai import is_broad_activity
             
-            # Check if the activity contains any broad terms
-            activity_is_broad = False
-            matched_term = None
-            suggestion = None
-            
-            # Direct match first
-            if activity_lower in broad_terms:
-                activity_is_broad = True
-                matched_term = activity_lower
-                suggestion = broad_terms[activity_lower]
-            else:
-                # Check if activity contains broad terms
-                for broad_term, broad_suggestion in broad_terms.items():
-                    if broad_term in activity_lower and len(activity_lower.split()) <= 2:
-                        activity_is_broad = True
-                        matched_term = broad_term
-                        suggestion = broad_suggestion
-                        break
-            
-            if activity_is_broad:
-                resp.message(f'"{activity}" is a bit broad. Try being more specific like:\n\n"{suggestion}"\n\nWhat specific type of venue are you looking for?')
+            broad_check = is_broad_activity(activity)
+            if broad_check['is_broad']:
+                resp.message(f'"{activity}" is a bit broad. Try being more specific like:\n\n"{broad_check["suggestion"]}"\n\nWhat specific type of venue are you looking for?')
                 return
             
             # Store activity in event notes or add an activity field
