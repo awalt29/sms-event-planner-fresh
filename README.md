@@ -98,3 +98,4 @@ The application communicates via SMS messages. Planners can:
 ## License
 
 MIT License
+# Deployment trigger Sun Aug  3 12:36:12 EDT 2025
