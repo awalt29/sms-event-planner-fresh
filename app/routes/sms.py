@@ -1656,21 +1656,16 @@ def handle_new_user(phone_number: str, message: str, resp: MessagingResponse):
     greetings = ['hey', 'hi', 'hello', 'sup', 'yo', 'howdy']
     planning_phrases = ['plan', 'organize', 'event', 'party', 'meeting']
     
-    # Check if they want to plan an event (including simple greetings)
-    if (message_lower in greetings or 
-        any(phrase in message_lower for phrase in planning_phrases)):
-        # Create new planner account without name first
-        planner = Planner(
-            phone_number=phone_number,
-            name=None
-        )
-        planner.save()
-        
-        welcome_text = """🎉 Welcome to Event Planner!
+    # For any new user, create planner account and start welcome flow
+    # This skips the intro message and goes straight to onboarding
+    planner = Planner(
+        phone_number=phone_number,
+        name=None
+    )
+    planner.save()
+    
+    welcome_text = """🎉 Welcome to Event Planner!
 
 What's your name?"""
-        
-        resp.message(welcome_text.strip())
-    else:
-        resp.message("Hi! I'm an event planning assistant. Send 'I want to plan an event' if you'd like to get started, "
-                   "or let me know if you're responding to an invitation.")
+    
+    resp.message(welcome_text.strip())
