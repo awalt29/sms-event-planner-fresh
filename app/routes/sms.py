@@ -3,7 +3,8 @@ from twilio.twiml.messaging_response import MessagingResponse
 from app.models import db, Planner, Event, Contact, Guest, GuestState, Availability
 from app.utils.sms import create_twiml_response, send_sms
 from app.utils.phone import normalize_phone, format_phone_display
-from app.utils.ai import parse_event_input, parse_availability, suggest_venues, is_broad_activity
+from app.utils.ai import parse_event_input, parse_availability, is_broad_activity
+from app.utils.venue_suggestions import suggest_venues
 from app.services.event_service import EventService
 from app.services.guest_service import GuestService
 from datetime import datetime, date, time
@@ -943,10 +944,7 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
             
             # Generate venue suggestions using simplified AI
             try:
-                logger.info(f"Requesting venue suggestions for '{activity}' in '{event.location}'")
                 venue_suggestions = suggest_venues(activity, event.location)
-                
-                logger.info(f"Venue suggestions result: {venue_suggestions}")
                 
                 if venue_suggestions.get('success'):
                     venues = venue_suggestions['venues'][:3]  # Top 3 suggestions
@@ -971,11 +969,8 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
                     event.venue_suggestions = json.dumps(venues)
                     event.save()
                     
-                    logger.info(f"Successfully generated venue suggestions for '{activity}'")
-                    
                 else:
-                    # AI failed - detailed logging and user feedback
-                    logger.warning(f"Venue suggestions failed for '{activity}': {venue_suggestions}")
+                    # AI failed - ask user to be more specific
                     error_message = venue_suggestions.get('error', 'Please be more specific about the venue type.')
                     response_text = f"🤔 {error_message}\n\n"
                     response_text += "Try being more specific, like:\n"
@@ -991,14 +986,9 @@ def handle_event_workflow_message(event: Event, message: str, resp: MessagingRes
                 resp.message(response_text)
                 
             except Exception as e:
-                logger.error(f"Exception in venue suggestion process for '{activity}': {e}")
-                import traceback
-                logger.error(f"Full traceback: {traceback.format_exc()}")
-                
-                # Provide more helpful error message with debugging info
-                resp.message(f"I'm having trouble with venue suggestions for '{activity}'. "
-                           f"Please try being more specific about what type of venue you want. "
-                           f"(Error: {str(e)[:50]})")
+                logger.error(f"Error in venue suggestion process: {e}")
+                resp.message("I'm having trouble with venue suggestions right now. "
+                           "Please try being more specific about what type of venue you want.")
         
         elif stage == 'selecting_venue':
             # Handle venue selection or other options
