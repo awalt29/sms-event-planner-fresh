@@ -73,8 +73,7 @@ def create_guest_collection_message(planner: Planner) -> str:
     # Get previous contacts for this planner
     contacts = Contact.query.filter_by(planner_id=planner.id).order_by(Contact.name).all()
     
-    message = "Hi! Let's plan your event.\n\n"
-    message += "Who's coming?\n\n"
+    message = "Who's coming?\n\n"
     message += "Reply with guest names and phone numbers (e.g. 'John Doe, 123-456-7890') or select previous contacts (e.g. '1,2').\n\n"
     
     if contacts:
