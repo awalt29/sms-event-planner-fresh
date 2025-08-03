@@ -737,9 +737,17 @@ def suggest_venues(activity: str, location: str, requirements: Optional[List[str
     Returns:
         dict: Venue suggestions with AI interpreting broad terms intelligently
     """
+    # Handle food-related activities intelligently before passing to AI service
+    if 'food' in activity.lower():
+        # Convert "chinese food" to "Chinese restaurants" for better AI understanding
+        cuisine = activity.lower().replace(' food', '').strip()
+        processed_activity = f"{cuisine.title()} restaurants"
+        logger.info(f"Converted food term: '{activity}' -> '{processed_activity}'")
+    else:
+        processed_activity = activity
+    
     # Accept all activities and let AI interpret them intelligently
-    # No more broad term rejection - the AI is smart enough to handle "chinese food" -> "Chinese restaurants"
-    return get_ai_service().suggest_venues(activity, location, requirements)
+    return get_ai_service().suggest_venues(processed_activity, location, requirements)
 
 
 def suggest_central_location(guest_locations: List[str]) -> Dict[str, Any]:
