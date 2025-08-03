@@ -263,7 +263,15 @@ class AIService:
                 return self._create_fallback_venue_suggestions(activity, location)
             
             # Create optimized prompt for speed and accuracy
-            prompt = f"""Suggest exactly 3 popular venues for "{activity}" in {location}.
+            # Handle food-related activities intelligently
+            if 'food' in activity.lower():
+                # Convert "chinese food" to "Chinese restaurants"
+                cuisine = activity.lower().replace(' food', '').strip()
+                prompt_activity = f"{cuisine.title()} restaurants"
+            else:
+                prompt_activity = activity
+            
+            prompt = f"""Suggest exactly 3 popular venues for "{prompt_activity}" in {location}.
 
 Return ONLY this JSON format:
 {{
