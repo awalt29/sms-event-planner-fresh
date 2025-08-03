@@ -1,10 +1,13 @@
-# Updated dependencies for production deployment
+# Updated dependencies for production deployment - FIXED httpx compatibility
 flask==3.0.0
 flask-sqlalchemy==3.1.1
 flask-migrate==4.0.5
 python-dotenv==1.0.0
 twilio==8.13.0
-openai==1.35.0  # Updated to fix 'proxies' parameter issue
+openai==1.35.0  # Works with httpx 0.24.1
+httpx==0.24.1   # Compatible version that fixes 'proxies' error
+httpcore==0.17.3  # Compatible with httpx 0.24.1
+h11==0.14.0     # Compatible with httpcore 0.17.3
 python-dateutil==2.8.2
 pytz==2024.1
 phonenumbers==8.13.27
