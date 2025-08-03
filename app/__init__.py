@@ -13,6 +13,14 @@ def create_app(config_class=Config):
     db.init_app(app)
     migrate = Migrate(app, db)
     
+    # Create database tables if they don't exist (for production)
+    with app.app_context():
+        try:
+            db.create_all()
+            app.logger.info("Database tables created/verified successfully")
+        except Exception as e:
+            app.logger.error(f"Error creating database tables: {e}")
+    
     # Register blueprints
     from app.routes.sms import sms_bp
     from app.routes.dashboard import dashboard_bp
