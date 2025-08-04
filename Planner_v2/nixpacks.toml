@@ -1,9 +1,17 @@
-# Nixpacks configuration for Railway
-[phases.setup]
-nixPkgs = ["python3", "gcc"]
+[variables]
+NIXPACKS_PYTHON_VERSION = "3.9"
 
-[phases.install]
-cmds = ["python -m venv --copies /opt/venv", ". /opt/venv/bin/activate && pip install -r requirements.txt"]
+[phases.setup]
+nixPkgs = ["python39", "gcc"]
+
+[phases.install] 
+cmds = [
+    "python -m venv --copies /opt/venv",
+    ". /opt/venv/bin/activate && pip install -r requirements.txt"
+]
 
 [phases.start]
-cmd = "gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --log-level info"
+cmd = ". /opt/venv/bin/activate && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --log-level info"
+
+[start]
+cmd = ". /opt/venv/bin/activate && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --log-level info"
