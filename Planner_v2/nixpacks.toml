@@ -1,8 +1,8 @@
 [variables]
-NIXPACKS_PYTHON_VERSION = "3.9"
+NIXPACKS_PYTHON_VERSION = "3.12"
 
 [phases.setup]
-nixPkgs = ["python39", "gcc"]
+nixPkgs = ["python312", "gcc"]
 
 [phases.install] 
 cmds = [
@@ -10,8 +10,6 @@ cmds = [
     ". /opt/venv/bin/activate && pip install -r requirements.txt"
 ]
 
-[phases.start]
-cmd = ". /opt/venv/bin/activate && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --log-level info"
-
-[start]
-cmd = ". /opt/venv/bin/activate && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --log-level info"
+# Use the Procfile instead of overriding
+# [phases.start]
+# [start]
