@@ -17,6 +17,7 @@ from app.handlers.guest_collection_handler import GuestCollectionHandler
 from app.handlers.date_collection_handler import DateCollectionHandler
 from app.handlers.confirmation_menu_handler import ConfirmationMenuHandler
 from app.handlers.availability_tracking_handler import AvailabilityTrackingHandler
+from app.handlers.guest_availability_handler import GuestAvailabilityHandler
 
 logger = logging.getLogger(__name__)
 sms_bp = Blueprint("sms", __name__)
@@ -32,6 +33,12 @@ class SMSRouter:
         self.ai_service = AIProcessingService()
         self.venue_service = VenueService()
         self.availability_service = AvailabilityService()
+        
+        # Initialize guest availability handler
+        self.guest_availability_handler = GuestAvailabilityHandler(
+            self.event_service, self.guest_service,
+            self.message_service, self.ai_service
+        )
         
         # Initialize handlers
         # Import handlers
@@ -173,60 +180,8 @@ class SMSRouter:
             return self._create_error_response()
     
     def _handle_availability_response(self, guest_state: GuestState, message: str) -> str:
-        """Handle guest availability response - single message, immediate cleanup"""
-        try:
-            # Parse availability using AI
-            context = guest_state.get_state_data()
-            parsed_availability = self.ai_service.parse_availability_text(message, context)
-            
-            if parsed_availability.get('available_dates'):
-                # Save availability data
-                from app.models.availability import Availability
-                from app.models.guest import Guest
-                from datetime import datetime
-                
-                # Find the guest record
-                guest = Guest.query.filter_by(
-                    event_id=guest_state.event_id,
-                    phone_number=guest_state.phone_number
-                ).first()
-                
-                if guest:
-                    # Save availability records
-                    for avail_data in parsed_availability['available_dates']:
-                        availability = Availability(
-                            event_id=guest_state.event_id,
-                            guest_id=guest.id,
-                            date=datetime.strptime(avail_data['date'], '%Y-%m-%d').date(),
-                            start_time=datetime.strptime(avail_data['start_time'], '%H:%M').time(),
-                            end_time=datetime.strptime(avail_data['end_time'], '%H:%M').time(),
-                            all_day=avail_data.get('all_day', False)
-                        )
-                        availability.save()
-                    
-                    # Mark guest as having provided availability
-                    guest.availability_provided = True
-                    guest.save()
-                    
-                    # Format confirmation response
-                    response_text = "Got it! Here's your availability:\n"
-                    for avail_data in parsed_availability['available_dates']:
-                        date_obj = datetime.strptime(avail_data['date'], '%Y-%m-%d').date()
-                        formatted_date = date_obj.strftime('%a, %-m/%-d')
-                        start_time = avail_data['start_time']
-                        end_time = avail_data['end_time']
-                        response_text += f"- {formatted_date}: {start_time} to {end_time}\n"
-                    
-                    response_text += "\n✅ Thanks! I've recorded your availability. "
-                    response_text += f"{guest_state.event.planner.name} will use this to find the best time for everyone."
-                    
-                    return response_text
-            
-            return "I couldn't understand your availability. Please try again with something like 'Monday after 2pm' or 'Saturday all day'."
-            
-        except Exception as e:
-            logger.error(f"Error handling availability response: {e}")
-            return self._create_error_response("Sorry, there was an error processing your availability.")
+        """Handle guest availability response - delegate to proper handler"""
+        return self.guest_availability_handler.handle_availability_response(guest_state, message)
     
     def _handle_rsvp_response(self, guest_state: GuestState, message: str) -> str:
         """Handle guest RSVP response - single message, immediate cleanup"""
