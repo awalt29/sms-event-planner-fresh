@@ -17,7 +17,6 @@ from app.handlers.guest_collection_handler import GuestCollectionHandler
 from app.handlers.date_collection_handler import DateCollectionHandler
 from app.handlers.confirmation_menu_handler import ConfirmationMenuHandler
 from app.handlers.availability_tracking_handler import AvailabilityTrackingHandler
-from app.handlers.guest_availability_handler import GuestAvailabilityHandler
 
 logger = logging.getLogger(__name__)
 sms_bp = Blueprint("sms", __name__)
@@ -34,23 +33,24 @@ class SMSRouter:
         self.venue_service = VenueService()
         self.availability_service = AvailabilityService()
         
-        # Initialize guest availability handler
-        self.guest_availability_handler = GuestAvailabilityHandler(
-            self.event_service, self.guest_service,
-            self.message_service, self.ai_service
-        )
-        
         # Initialize handlers
         # Import handlers
         from app.handlers.guest_collection_handler import GuestCollectionHandler
         from app.handlers.date_collection_handler import DateCollectionHandler
         from app.handlers.confirmation_menu_handler import ConfirmationMenuHandler
         from app.handlers.availability_tracking_handler import AvailabilityTrackingHandler
+        from app.handlers.guest_availability_handler import GuestAvailabilityHandler
         from app.handlers.time_selection_handler import TimeSelectionHandler
         from app.handlers.location_collection_handler import LocationCollectionHandler
         from app.handlers.activity_collection_handler import ActivityCollectionHandler
         from app.handlers.venue_selection_handler import VenueSelectionHandler
         from app.handlers.final_confirmation_handler import FinalConfirmationHandler
+        
+        # Initialize guest availability handler
+        self.guest_availability_handler = GuestAvailabilityHandler(
+            self.event_service, self.guest_service,
+            self.message_service, self.ai_service
+        )
         
         self.handlers = {
             'collecting_guests': GuestCollectionHandler(

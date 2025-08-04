@@ -15,7 +15,8 @@ class AIProcessingService:
         self.base_url = "https://api.openai.com/v1"
         
         if not self.api_key:
-            logger.error("OPENAI_API_KEY environment variable is required")
+            logger.error("OPENAI_API_KEY environment variable is required - AI features will be disabled")
+            self.api_key = None  # Explicitly set to None for safety
         else:
             logger.info("AI Processing Service initialized with HTTP client")
     
