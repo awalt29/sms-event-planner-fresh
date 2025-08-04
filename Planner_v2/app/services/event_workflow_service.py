@@ -19,7 +19,7 @@ class EventWorkflowService:
         """Create new event from natural language description"""
         try:
             # Parse event details using AI
-            parsed_event = self.ai_service.parse_event_input(text)
+            parsed_event = self._parse_event_input(text)
             
             # Create event record
             event = Event(
@@ -37,6 +37,38 @@ class EventWorkflowService:
         except Exception as e:
             logger.error(f"Error creating event: {e}")
             return {'success': False, 'error': str(e)}
+    
+    def _parse_event_input(self, text: str) -> dict:
+        """Parse event input using AI service"""
+        try:
+            prompt = f"""Parse this event description: "{text}"
+            
+Return JSON with:
+- title: a concise event title
+- activity: the main activity (dinner, party, meeting, etc.)
+- location: location if mentioned, otherwise null
+
+Examples:
+"dinner party" -> {{"title": "Dinner Party", "activity": "dinner", "location": null}}
+"birthday party at my house" -> {{"title": "Birthday Party", "activity": "party", "location": "my house"}}
+"work meeting downtown" -> {{"title": "Work Meeting", "activity": "meeting", "location": "downtown"}}"""
+
+            response = self.ai_service.make_completion(prompt, 150)
+            if response:
+                import json
+                result = json.loads(response)
+                logger.info(f"Event parsing successful: {result}")
+                return result
+                
+        except Exception as e:
+            logger.error(f"Event parsing error: {e}")
+            
+        # Fallback to simple parsing
+        return {
+            'title': text.title(),
+            'activity': text.lower(),
+            'location': None
+        }
     
     def transition_to_stage(self, event: Event, new_stage: str) -> bool:
         """Validate and execute workflow state transition"""

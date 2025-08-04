@@ -12,14 +12,50 @@ class GuestManagementService:
     
     def __init__(self):
         from app.services.sms_service import SMSService
-        from app.services.ai_processing_service import AIProcessingService
         self.sms_service = SMSService()
-        self.ai_service = AIProcessingService()
     
-    def add_guests_from_text(self, event_id: int, text: str) -> Dict:
-        """Parse guest information from text and add to event"""
+    def add_guest_to_event(self, event_id: int, name: str, phone: str = None) -> Guest:
+        """Add a single guest to an event"""
         try:
-            # Parse guest info using AI or regex patterns
+            # Normalize phone number
+            normalized_phone = self._normalize_phone(phone) if phone else 'N/A'
+            
+            # Check for existing guest
+            existing = Guest.query.filter_by(
+                event_id=event_id,
+                phone_number=normalized_phone
+            ).first()
+            
+            if existing:
+                return existing
+            
+            # Create new guest
+            guest = Guest(
+                event_id=event_id,
+                name=name,
+                phone_number=normalized_phone,
+                rsvp_status='pending',
+                availability_provided=False
+            )
+            guest.save()
+            
+            # Save as contact for future use if phone provided
+            if phone and phone != 'N/A':
+                from app.models.event import Event
+                event = Event.query.get(event_id)
+                if event:
+                    self._save_as_contact(event.planner_id, {'name': name, 'phone_number': normalized_phone})
+            
+            return guest
+            
+        except Exception as e:
+            logger.error(f"Error adding guest: {e}")
+            return None
+
+    def add_guests_from_text(self, event_id: int, text: str) -> Dict:
+        """Legacy method - parse guest information from text and add to event"""
+        try:
+            # Parse guest info using regex patterns only (AI parsing moved to handlers)
             parsed_guests = self._parse_guest_text(text)
             
             if not parsed_guests:
@@ -27,25 +63,13 @@ class GuestManagementService:
             
             added_guests = []
             for guest_data in parsed_guests:
-                # Check for existing guest
-                existing = Guest.query.filter_by(
-                    event_id=event_id,
-                    phone_number=guest_data['phone_number']
-                ).first()
-                
-                if not existing:
-                    guest = Guest(
-                        event_id=event_id,
-                        name=guest_data['name'],
-                        phone_number=guest_data['phone_number'],
-                        rsvp_status='pending',
-                        availability_provided=False
-                    )
-                    guest.save()
+                guest = self.add_guest_to_event(
+                    event_id, 
+                    guest_data['name'], 
+                    guest_data.get('phone_number')
+                )
+                if guest:
                     added_guests.append(guest)
-                    
-                    # Save as contact for future use
-                    self._save_as_contact(event_id, guest_data)
             
             return {'success': True, 'guests': added_guests}
             
@@ -81,30 +105,7 @@ class GuestManagementService:
             return False
     
     def _parse_guest_text(self, text: str) -> List[Dict]:
-        """Parse guest information from text input using AI then fallback to regex"""
-        # First try AI parsing
-        try:
-            ai_result = self.ai_service.parse_guest_input(text)
-            if ai_result.get('success') and ai_result.get('guests'):
-                guests = []
-                for guest_data in ai_result['guests']:
-                    name = guest_data.get('name', '').strip()
-                    phone = guest_data.get('phone', '').strip()
-                    
-                    if name:
-                        normalized_phone = self._normalize_phone(phone) if phone else None
-                        guests.append({
-                            'name': name,
-                            'phone_number': normalized_phone or 'N/A'
-                        })
-                
-                if guests:
-                    logger.info(f"AI parsed {len(guests)} guests successfully")
-                    return guests
-        except Exception as e:
-            logger.error(f"AI guest parsing failed: {e}")
-        
-        # Fallback to regex parsing for "name, phone" format
+        """Parse guest information from text input using regex patterns only"""
         import re
         
         # Pattern for name and phone number
@@ -119,6 +120,20 @@ class GuestManagementService:
                     'name': name.strip(),
                     'phone_number': normalized_phone
                 })
+        
+        # If no comma-separated format, try space-separated (name followed by phone)
+        if not guests:
+            space_pattern = r'([A-Za-z\s]+)\s+(\d{10,})'
+            space_match = re.search(space_pattern, text)
+            if space_match:
+                name = space_match.group(1).strip()
+                phone = space_match.group(2).strip()
+                normalized_phone = self._normalize_phone(phone)
+                if normalized_phone:
+                    guests.append({
+                        'name': name,
+                        'phone_number': normalized_phone
+                    })
         
         if guests:
             logger.info(f"Regex parsed {len(guests)} guests successfully")

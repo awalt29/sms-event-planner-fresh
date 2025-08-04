@@ -392,6 +392,8 @@ def sms_webhook():
         from_number = request.form.get('From', '').replace('+1', '')
         message_body = request.form.get('Body', '').strip()
         
+        logger.info(f"SMS webhook - From: '{from_number}', Body: '{message_body}' (length: {len(message_body)})")
+        
         if not from_number or not message_body:
             logger.error("Missing phone number or message body")
             return str(MessagingResponse())

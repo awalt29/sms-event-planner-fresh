@@ -1,13 +1,20 @@
 import logging
+import json
+import re
 from app.handlers import BaseWorkflowHandler, HandlerResult
 from app.models.event import Event
 from app.models.guest import Guest
 from app.models.contact import Contact
+from app.services.ai_processing_service import AIProcessingService
 
 logger = logging.getLogger(__name__)
 
 class GuestCollectionHandler(BaseWorkflowHandler):
     """Handles guest collection workflow stage"""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Use the AI service passed in from parent, don't create our own
     
     def handle_message(self, event: Event, message: str) -> HandlerResult:
         try:
@@ -31,20 +38,37 @@ class GuestCollectionHandler(BaseWorkflowHandler):
                 return HandlerResult.success_response(date_prompt, 'collecting_dates')
             
             # Handle contact selection (numeric input like "1,2,3")
-            import re
             if re.match(r'^\s*\d+(\s*,\s*\d+)*\s*$', message.strip()):
                 return self._handle_contact_selection(event, message)
             
-            # Handle new guest addition
-            result = self.guest_service.add_guests_from_text(event.id, message)
+            # Parse guest input using AI for this step
+            guest_data = self._parse_guest_input(message)
             
-            if result['success']:
-                guest = result['guests'][0]
-                response_msg = f"Added: {guest.name} ({guest.phone_number})\n\n"
-                response_msg += "Add more guests, or reply 'done' when finished."
-                return HandlerResult.success_response(response_msg)
-            else:
-                return HandlerResult.error_response(f"❌ {result['error']}")
+            if guest_data['success']:
+                added_guests = []
+                for guest_info in guest_data['guests']:
+                    # Add guest using existing service
+                    guest = self.guest_service.add_guest_to_event(
+                        event.id, 
+                        guest_info['name'], 
+                        guest_info.get('phone', 'N/A')
+                    )
+                    if guest:
+                        added_guests.append(guest)
+                
+                if added_guests:
+                    guest_names = [f"{g.name} ({g.phone_number})" for g in added_guests]
+                    response = f"Added: {', '.join(guest_names)}\n\n"
+                    response += "Add more guests, or reply 'done' when finished."
+                    return HandlerResult.success_response(response)
+            
+            # If parsing failed, provide helpful error
+            return HandlerResult.error_response(
+                "❌ Could not parse guest information. Please use format like:\n"
+                "- 'John Doe, 555-1234'\n"
+                "- 'Mary 5105935336'\n"
+                "- 'Sarah and Mike'"
+            )
                 
         except Exception as e:
             logger.error(f"Error in guest collection: {e}")
@@ -105,3 +129,88 @@ class GuestCollectionHandler(BaseWorkflowHandler):
             return HandlerResult.error_response(
                 "Please use contact numbers (e.g. '1,3') or add new guests with names and phone numbers."
             )
+
+    def _parse_guest_input(self, text: str) -> dict:
+        """Parse guest input specific to guest collection step"""
+        logger.info(f"Guest collection - parsing input: '{text}'")
+        
+        # Try AI parsing first
+        ai_result = self._ai_parse_guest(text)
+        if ai_result and ai_result.get('success'):
+            logger.info(f"Guest collection - AI parsing succeeded: {ai_result}")
+            return ai_result
+        
+        # Fallback to regex for this step
+        logger.info("Guest collection - falling back to regex parsing")
+        regex_result = self._regex_parse_guest(text)
+        logger.info(f"Guest collection - regex parsing result: {regex_result}")
+        return regex_result
+    
+    def _ai_parse_guest(self, text: str) -> dict:
+        """AI parsing for guest collection step only"""
+        try:
+            prompt = f"""Parse guest information from: "{text}"
+
+Return JSON with:
+- success: true/false
+- guests: array with name and phone (phone optional)
+- error: string if failed
+
+Examples:
+"John 5105935336" -> {{"success": true, "guests": [{{"name": "John", "phone": "5105935336"}}]}}
+"Mary Smith, 555-1234" -> {{"success": true, "guests": [{{"name": "Mary Smith", "phone": "5551234"}}]}}
+"Sarah and Mike" -> {{"success": true, "guests": [{{"name": "Sarah"}}, {{"name": "Mike"}}]}}
+"hello" -> {{"success": false, "error": "No guest info found"}}"""
+
+            logger.info(f"Guest collection - attempting AI parsing for: '{text}'")
+            response = self.ai_service.make_completion(prompt, 200)
+            logger.info(f"Guest collection - AI response: {response}")
+            
+            if response:
+                result = json.loads(response)
+                logger.info(f"Guest collection - AI parsing result: {result}")
+                return result
+                
+        except Exception as e:
+            logger.error(f"Guest collection AI parsing error: {e}")
+            
+        logger.info("Guest collection - AI parsing failed, returning None")
+        return None
+    
+    def _regex_parse_guest(self, text: str) -> dict:
+        """Regex fallback for guest collection step"""
+        # Pattern: name followed by phone
+        pattern = r'([A-Za-z\s]+)[\s,]+(\d{10,})'
+        match = re.search(pattern, text.strip())
+        
+        if match:
+            name = match.group(1).strip()
+            phone = re.sub(r'\D', '', match.group(2))
+            return {
+                'success': True,
+                'guests': [{'name': name, 'phone': phone}]
+            }
+        
+        # Pattern: just names separated by "and" or comma
+        name_pattern = r'([A-Za-z\s]+)(?:\s+and\s+|\s*,\s*)([A-Za-z\s]+)'
+        name_match = re.search(name_pattern, text.strip())
+        
+        if name_match:
+            names = [name_match.group(1).strip(), name_match.group(2).strip()]
+            guests = [{'name': name} for name in names if name]
+            return {
+                'success': True,
+                'guests': guests
+            }
+        
+        # Single name
+        if re.match(r'^[A-Za-z\s]+$', text.strip()):
+            return {
+                'success': True,
+                'guests': [{'name': text.strip()}]
+            }
+        
+        return {
+            'success': False,
+            'error': 'Could not parse guest information'
+        }
