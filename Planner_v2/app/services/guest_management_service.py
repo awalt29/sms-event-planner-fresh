@@ -81,8 +81,30 @@ class GuestManagementService:
             return False
     
     def _parse_guest_text(self, text: str) -> List[Dict]:
-        """Parse guest information from text input"""
-        # Implementation for parsing "John Doe, 123-456-7890" format
+        """Parse guest information from text input using AI then fallback to regex"""
+        # First try AI parsing
+        try:
+            ai_result = self.ai_service.parse_guest_input(text)
+            if ai_result.get('success') and ai_result.get('guests'):
+                guests = []
+                for guest_data in ai_result['guests']:
+                    name = guest_data.get('name', '').strip()
+                    phone = guest_data.get('phone', '').strip()
+                    
+                    if name:
+                        normalized_phone = self._normalize_phone(phone) if phone else None
+                        guests.append({
+                            'name': name,
+                            'phone_number': normalized_phone or 'N/A'
+                        })
+                
+                if guests:
+                    logger.info(f"AI parsed {len(guests)} guests successfully")
+                    return guests
+        except Exception as e:
+            logger.error(f"AI guest parsing failed: {e}")
+        
+        # Fallback to regex parsing for "name, phone" format
         import re
         
         # Pattern for name and phone number
@@ -97,6 +119,11 @@ class GuestManagementService:
                     'name': name.strip(),
                     'phone_number': normalized_phone
                 })
+        
+        if guests:
+            logger.info(f"Regex parsed {len(guests)} guests successfully")
+        else:
+            logger.warning(f"Could not parse guest information from: '{text}'")
         
         return guests
     

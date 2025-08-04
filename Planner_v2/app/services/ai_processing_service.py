@@ -2,50 +2,95 @@ from typing import Dict, List
 import logging
 import os
 import json
+import requests
 
 logger = logging.getLogger(__name__)
 
 class AIProcessingService:
-    """Handles AI integration for natural language processing"""
+    """Handles AI integration for natural language processing - using direct HTTP requests"""
+    
+    _instance = None
+    _api_key = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(AIProcessingService, cls).__new__(cls)
+        return cls._instance
     
     def __init__(self):
+        if not self._initialized:
+            self._initialize_client()
+            self._initialized = True
+    
+    def _initialize_client(self):
+        """Initialize OpenAI API key for direct HTTP requests"""
         try:
-            from openai import OpenAI
-            self.client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-        except ImportError:
-            logger.warning("OpenAI library not available")
-            self.client = None
+            api_key = os.getenv('OPENAI_API_KEY')
+            if api_key and len(api_key.strip()) > 0:
+                self._api_key = api_key.strip()
+                logger.info("OpenAI API key loaded successfully - using direct HTTP requests")
+            else:
+                logger.error("OPENAI_API_KEY is required for this application to work properly")
+                self._api_key = None
         except Exception as e:
-            logger.error(f"Error initializing OpenAI client: {e}")
-            self.client = None
+            logger.error(f"OpenAI API key initialization failed: {e}")
+            self._api_key = None
+    
+    def _make_chat_completion(self, prompt: str, max_tokens: int = 200) -> str:
+        """Make a chat completion request using direct HTTP requests"""
+        if not self._api_key:
+            raise Exception("OpenAI API key not available")
+        
+        try:
+            url = "https://api.openai.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": max_tokens
+            }
+            
+            response = requests.post(url, headers=headers, json=data, timeout=30)
+            response.raise_for_status()
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+                
+        except Exception as e:
+            logger.error(f"Direct HTTP chat completion failed: {e}")
+            raise
     
     def parse_natural_language_dates(self, message: str) -> Dict:
         """Convert natural language to structured date objects"""
-        try:
-            if not self.client:
-                return self._fallback_date_parsing(message)
-                
-            prompt = f"""
-            Parse the following date text into structured data:
-            "{message}"
+        if not self._api_key:
+            logger.error("OpenAI API key not available - cannot parse dates")
+            return self._fallback_date_parsing(message)
             
-            Return JSON with:
+        try:
+            prompt = f"""
+            Parse the following date text into structured data. Today is August 4, 2025 (Sunday).
+            Text: "{message}"
+            
+            Return ONLY valid JSON with:
             - success: boolean
             - dates: list of date strings in YYYY-MM-DD format
             - dates_text: human readable summary
             
             Examples:
-            "Monday" -> {{"success": true, "dates": ["2025-08-04"], "dates_text": "Monday, August 4"}}
+            "Monday" -> {{"success": true, "dates": ["2025-08-05"], "dates_text": "Monday, August 5"}}
             "Saturday and Sunday" -> {{"success": true, "dates": ["2025-08-09", "2025-08-10"], "dates_text": "Saturday and Sunday"}}
+            "8/15" -> {{"success": true, "dates": ["2025-08-15"], "dates_text": "Friday, August 15"}}
             """
             
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                timeout=20
-            )
-            
-            return json.loads(response.choices[0].message.content)
+            response_text = self._make_chat_completion(prompt, 200)
+            result = json.loads(response_text)
+            logger.info(f"AI date parsing successful: {result}")
+            return result
             
         except Exception as e:
             logger.error(f"AI date parsing error: {e}")
@@ -53,36 +98,46 @@ class AIProcessingService:
     
     def parse_availability_text(self, message: str, context: Dict) -> Dict:
         """Parse availability responses like 'Monday after 2pm'"""
+        if not self._api_key:
+            logger.error("OpenAI API key not available - cannot parse availability")
+            return self._fallback_availability_parsing(message)
+            
         try:
-            if not self.client:
-                return self._fallback_availability_parsing(message)
-                
+            dates_context = context.get('dates', [])
             prompt = f"""
             Parse availability from: "{message}"
-            Context: {context}
+            Available dates: {dates_context}
             
-            Return JSON with:
-            - available_dates: list of {{date, start_time, end_time, all_day}}
-            - notes: any additional notes
+            Return ONLY valid JSON with:
+            - available_dates: list of objects with {{date, start_time, end_time, all_day}}
+            - notes: any additional notes (optional)
             
-            Example:
+            Time format: HH:MM (24-hour)
+            
+            Examples:
             "Monday after 2pm" -> {{
                 "available_dates": [{{
-                    "date": "2025-08-04",
+                    "date": "2025-08-05",
                     "start_time": "14:00",
                     "end_time": "23:59",
                     "all_day": false
                 }}]
             }}
+            
+            "All day Saturday" -> {{
+                "available_dates": [{{
+                    "date": "2025-08-09",
+                    "start_time": "00:00",
+                    "end_time": "23:59",
+                    "all_day": true
+                }}]
+            }}
             """
             
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                timeout=20
-            )
-            
-            return json.loads(response.choices[0].message.content)
+            response_text = self._make_chat_completion(prompt, 300)
+            result = json.loads(response_text)
+            logger.info(f"AI availability parsing successful: {result}")
+            return result
             
         except Exception as e:
             logger.error(f"AI availability parsing error: {e}")
@@ -90,35 +145,39 @@ class AIProcessingService:
 
     def parse_event_input(self, text: str) -> Dict:
         """Parse event creation text"""
+        if not self._api_key:
+            logger.error("OpenAI API key not available - cannot parse event")
+            return self._fallback_event_parsing(text)
+            
         try:
-            if not self.client:
-                return self._fallback_event_parsing(text)
-                
             prompt = f"""
             Parse event details from: "{text}"
             
-            Return JSON with:
-            - title: event title (optional)
-            - location: location if mentioned
-            - activity: activity type if mentioned
+            Return ONLY valid JSON with:
+            - title: event title (if mentioned)
+            - location: location (if mentioned)
+            - activity: activity type (if mentioned)
             - success: boolean
             
-            Example:
+            Examples:
             "dinner friday in brooklyn" -> {{
                 "title": "Dinner",
                 "location": "Brooklyn", 
                 "activity": "dinner",
                 "success": true
             }}
+            
+            "coffee meeting" -> {{
+                "title": "Coffee Meeting",
+                "activity": "coffee",
+                "success": true
+            }}
             """
             
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                timeout=20
-            )
-            
-            return json.loads(response.choices[0].message.content)
+            response_text = self._make_chat_completion(prompt, 200)
+            result = json.loads(response_text)
+            logger.info(f"AI event parsing successful: {result}")
+            return result
             
         except Exception as e:
             logger.error(f"AI event parsing error: {e}")
@@ -232,3 +291,44 @@ class AIProcessingService:
             result['location'] = 'Manhattan'
         
         return result
+
+    def parse_guest_input(self, text: str) -> Dict:
+        """Parse guest names and phone numbers from text"""
+        if not self._api_key:
+            logger.error("OpenAI API key not available - cannot parse guests")
+            return {'success': False, 'error': 'AI parsing not available'}
+            
+        try:
+            prompt = f"""
+            Parse guest information from: "{text}"
+            
+            Extract names and phone numbers. Return ONLY valid JSON with:
+            - success: boolean
+            - guests: list of objects with {{name, phone}} where phone is optional
+            - error: string (if success is false)
+            
+            Examples:
+            "John Doe, 123-456-7890" -> {{
+                "success": true,
+                "guests": [{{"name": "John Doe", "phone": "123-456-7890"}}]
+            }}
+            
+            "Sarah and Mike" -> {{
+                "success": true, 
+                "guests": [{{"name": "Sarah"}}, {{"name": "Mike"}}]
+            }}
+            
+            "Awork 15105935336" -> {{
+                "success": true,
+                "guests": [{{"name": "Awork", "phone": "15105935336"}}]
+            }}
+            """
+            
+            response_text = self._make_chat_completion(prompt, 300)
+            result = json.loads(response_text)
+            logger.info(f"AI guest parsing successful: {result}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"AI guest parsing error: {e}")
+            return {'success': False, 'error': f'AI parsing failed: {str(e)}'}
