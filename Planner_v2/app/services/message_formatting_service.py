@@ -8,12 +8,95 @@ logger = logging.getLogger(__name__)
 class MessageFormattingService:
     """Handles all message formatting with consistent emoji usage"""
     
+    def _extract_first_name(self, full_name: str) -> str:
+        """Extract first name from full name, handling titles"""
+        if not full_name:
+            return "Friend"
+        
+        # Split by spaces and clean up
+        name_parts = full_name.strip().split()
+        if not name_parts:
+            return full_name.strip() or "Friend"
+        
+        # Common titles to skip
+        titles = {'dr.', 'dr', 'mr.', 'mr', 'mrs.', 'mrs', 'ms.', 'ms', 'prof.', 'prof'}
+        
+        # Find the first non-title word
+        for part in name_parts:
+            if part.lower().rstrip('.') not in titles:
+                return part
+        
+        # If all parts are titles, just use the first one
+        return name_parts[0]
+    
+    def _format_time_12hr(self, time_str: str) -> str:
+        """Convert 24-hour format to 12-hour format"""
+        try:
+            from datetime import datetime
+            # Parse the time string (HH:MM format)
+            time_obj = datetime.strptime(time_str, '%H:%M')
+            # Format to 12-hour with am/pm
+            formatted = time_obj.strftime('%I:%M%p').lower()
+            # Remove leading zero from hour and :00 for cleaner look
+            if formatted.startswith('0'):
+                formatted = formatted[1:]  # Remove leading zero
+            # Remove :00 for on-the-hour times (12:00pm becomes 12pm)
+            if ':00' in formatted:
+                formatted = formatted.replace(':00', '')
+            return formatted
+        except ValueError:
+            # If parsing fails, return original
+            return time_str
+    
+    def _format_phone_display(self, phone_number: str) -> str:
+        """Format phone number for display"""
+        if not phone_number:
+            return phone_number
+        
+        # Remove + and any non-digits
+        digits = ''.join(filter(str.isdigit, phone_number))
+        
+        # Remove country code if present: +12167046177 -> 2167046177
+        if len(digits) == 11 and digits.startswith('1'):
+            digits = digits[1:]  # Remove country code
+        
+        # Return just the 10 digits for consistency with the rest of the app
+        if len(digits) == 10:
+            return digits
+        
+        # If not a standard 10-digit number, return as-is
+        return phone_number
+    
     def format_planner_confirmation_menu(self, event: Event) -> str:
         """Generate 3-option confirmation menu"""
-        guest_list = "\n".join([f"- {guest.name} ({guest.phone_number})" for guest in event.guests])
+        guest_list = "\n".join([f"- {guest.name} ({self._format_phone_display(guest.phone_number)})" for guest in event.guests])
         
         response_text = "Got it, planning for:\n"
-        if event.notes and "Proposed dates:" in event.notes:
+        
+        # Format dates as individual list items
+        if event.notes and "Dates JSON:" in event.notes:
+            # Extract dates from JSON storage
+            try:
+                import json
+                from datetime import datetime
+                dates_json_part = event.notes.split("Dates JSON: ")[1].split("\n")[0]
+                dates = json.loads(dates_json_part)
+                
+                # Format each date as a list item
+                for date_str in dates:
+                    try:
+                        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                        formatted_date = date_obj.strftime('%A, %B %-d')
+                        response_text += f"- {formatted_date}\n"
+                    except ValueError:
+                        response_text += f"- {date_str}\n"
+            except (json.JSONDecodeError, IndexError):
+                # Fallback to old format
+                if "Proposed dates:" in event.notes:
+                    dates_text = event.notes.split("Proposed dates: ")[1].split("\n")[0]
+                    response_text += f"- {dates_text}\n"
+        elif event.notes and "Proposed dates:" in event.notes:
+            # Fallback for old format
             dates_text = event.notes.split("Proposed dates: ")[1].split("\n")[0]
             response_text += f"- {dates_text}\n"
         
@@ -41,12 +124,18 @@ class MessageFormattingService:
             status_text += "Still waiting for:\n"
             for guest in pending_guests:
                 status_text += f"- {guest.name}\n"
-            status_text += "\nSend 'remind' to send follow-up messages."
+            status_text += "\nSend 'remind' to send follow-up messages.\n"
         else:
             status_text += "🎉 Everyone has responded!\n\n"
             status_text += "Would you like to:\n"
             status_text += "1. Pick a time\n"
-            status_text += "2. Add more guests"
+            status_text += "2. Add more guests\n"
+        
+        # Show overlap option if we have at least one response
+        if provided_count > 0:
+            if pending_count > 0:
+                status_text += f"\nPress 1 to view current overlaps"
+            # If everyone responded, the overlap option is already shown as "1. Pick a time"
         
         return status_text
     
@@ -63,23 +152,34 @@ class MessageFormattingService:
             else:
                 response_text += "\n"
         
-        response_text += "Select an option (1,2,3) or say:\n"
-        response_text += "- 'New list' for more options\n"
-        response_text += "- 'Activity' to change the activity\n"
-        response_text += "- 'Location' to change the location"
+        response_text += "Select an option (1,2,3) or select:\n"
+        response_text += "4. Generate a new list\n"
+        response_text += "5. Select a new activity\n\n"
         
         return response_text
     
     def format_guest_invitation(self, event: Event, guest: Guest) -> str:
         """Create final invitation message"""
-        # Format date and time
-        date_obj = event.start_date
+        # Format date and time - use selected_ fields from time selection
+        date_obj = event.selected_date or event.start_date
         formatted_date = date_obj.strftime('%A, %B %-d') if date_obj else "TBD"
         
-        if event.start_time and event.end_time:
-            start_time = event.start_time.strftime('%I:%M%p').lower()
-            end_time = event.end_time.strftime('%I:%M%p').lower()
-            time_str = f"{start_time}-{end_time}"
+        # Use selected time fields if available, fallback to original fields
+        start_time = event.selected_start_time or event.start_time
+        end_time = event.selected_end_time or event.end_time
+        
+        if start_time:
+            start_time_str = self._format_time_12hr(start_time.strftime('%H:%M'))
+            
+            # Show just start time if user specifically set it, otherwise show range
+            if event.notes and "USER_SET_START_TIME=True" in event.notes:
+                time_str = start_time_str  # Just show "4pm"
+            elif end_time:
+                # System-selected or original time, show full range
+                end_time_str = self._format_time_12hr(end_time.strftime('%H:%M'))
+                time_str = f"{start_time_str}-{end_time_str}"
+            else:
+                time_str = start_time_str
         else:
             time_str = "All day"
         
@@ -87,13 +187,28 @@ class MessageFormattingService:
         venue_info = "Selected venue"
         venue_link = ""
         if event.selected_venue:
+            logger.info(f"Raw venue data: {event.selected_venue} (type: {type(event.selected_venue)})")
             try:
-                import json
-                venue_data = json.loads(event.selected_venue)
+                # Handle both dict and JSON string formats
+                if isinstance(event.selected_venue, dict):
+                    venue_data = event.selected_venue
+                else:
+                    import json
+                    venue_data = json.loads(event.selected_venue)
+                
                 venue_info = venue_data.get('name', 'Selected venue')
                 venue_link = venue_data.get('link', '')
-            except:
-                pass
+                logger.info(f"Parsed venue: {venue_info}, link: {venue_link}")
+            except Exception as e:
+                logger.error(f"Error parsing venue data: {e}")
+                # Fallback to check if it's a simple string
+                if isinstance(event.selected_venue, str) and not event.selected_venue.startswith('{'):
+                    venue_info = event.selected_venue
+        elif event.activity:
+            # Check activity field for venue name
+            venue_info = event.activity
+        else:
+            logger.warning("No selected_venue or activity data found")
         
         invitation_msg = f"🎉 You're invited!\n\n"
         invitation_msg += f"📅 Date: {formatted_date}\n"
@@ -101,15 +216,18 @@ class MessageFormattingService:
         invitation_msg += f"🏢 Venue: {venue_info}\n"
         if venue_link:
             invitation_msg += f"{venue_link}\n"
-        invitation_msg += f"\nPlanned by: {event.planner.name or 'Your event planner'}\n\n"
+        invitation_msg += f"\nPlanned by: {self._extract_first_name(event.planner.name) if event.planner.name else 'Your planner'}\n\n"
         invitation_msg += "Please reply 'Yes', 'No', or 'Maybe' to confirm your attendance!"
         
         return invitation_msg
     
-    def format_time_selection_options(self, overlaps: List[Dict]) -> str:
+    def format_time_selection_options(self, overlaps: List[Dict], event: Event = None) -> str:
         """Format time selection with overlaps"""
         if not overlaps:
-            return "❌ No overlapping times found. You may need to add more flexibility or different dates."
+            if event:
+                return self._format_no_overlap_message(event)
+            else:
+                return "❌ No overlapping times found. You may need to add more flexibility or different dates."
         
         response_text = "🕒 Best available timeslots:\n\n"
         
@@ -121,10 +239,13 @@ class MessageFormattingService:
             end_time = overlap.get('end_time', '23:59')
             
             # Convert to readable format
-            if start_time == '00:00' and end_time == '23:59':
+            if start_time == '08:00' and end_time == '23:59':
                 time_str = "All day"
             else:
-                time_str = f"{start_time}-{end_time}"
+                # Convert to 12-hour format
+                start_12hr = self._format_time_12hr(start_time)
+                end_12hr = self._format_time_12hr(end_time)
+                time_str = f"{start_12hr}-{end_12hr}"
             
             guest_count = overlap.get('guest_count', 0)
             total_guests = len(overlap.get('available_guests', []))
@@ -138,38 +259,102 @@ class MessageFormattingService:
         
         return response_text
 
+    def _format_no_overlap_message(self, event: Event) -> str:
+        """Format detailed message when no overlapping times are found"""
+        from app.models.availability import Availability
+        from app import db
+        from datetime import datetime
+        
+        message = "❌ No overlapping times found.\n\n"
+        message += "Guest availability:\n\n"
+        
+        # Get all unique dates from availability records for this event
+        availability_dates = db.session.query(Availability.date).filter_by(event_id=event.id).distinct().all()
+        event_dates = [date_tuple[0] for date_tuple in availability_dates if date_tuple[0]]
+        event_dates.sort()
+        
+        for event_date in event_dates:
+            # Format date with day of week and full date
+            formatted_date = event_date.strftime('%A, %B %-d')
+            # Only show year if different from current year
+            current_year = datetime.now().year
+            if event_date.year != current_year:
+                formatted_date += f", {event_date.year}"
+            
+            message += f"📅 {formatted_date}\n\n"
+            
+            # Get availability for each guest on this date
+            for guest in event.guests:
+                message += f"👤 {guest.name}\n"
+                
+                # Find availability for this guest on this date
+                availability = Availability.query.filter_by(
+                    event_id=event.id,
+                    guest_id=guest.id,
+                    date=event_date
+                ).first()
+                
+                if availability:
+                    start_time = self._format_time_12hr(availability.start_time.strftime('%H:%M'))
+                    end_time = self._format_time_12hr(availability.end_time.strftime('%H:%M'))
+                    message += f"🕒 {start_time} - {end_time}\n\n"
+                else:
+                    message += "- Not available\n\n"
+        
+        message += "Say 'restart' to try with new guests or dates"
+        return message
+
     def format_final_confirmation(self, event: Event) -> str:
         """Format final confirmation with all event details"""
-        # Get date info
-        if event.notes and "Proposed dates:" in event.notes:
-            dates_text = event.notes.split("Proposed dates: ")[1].split("\n")[0]
+        # Get date and time info from selected data
+        if event.selected_date:
+            date_text = event.selected_date.strftime('Tuesday, August %-d')
+            if event.selected_start_time:
+                start_time = self._format_time_12hr(event.selected_start_time.strftime('%H:%M'))
+                
+                # Show just start time if user specifically set it, otherwise show range
+                if event.notes and "USER_SET_START_TIME=True" in event.notes:
+                    time_text = start_time  # Just show "4pm"
+                elif event.selected_end_time:
+                    # System-selected time overlap, show full range
+                    end_time = self._format_time_12hr(event.selected_end_time.strftime('%H:%M'))
+                    time_text = f"{start_time}-{end_time}"
+                else:
+                    time_text = start_time
+            else:
+                time_text = "All day"
         else:
-            dates_text = "TBD"
-        
-        # Get time info
-        if event.notes and "Selected time:" in event.notes:
-            time_text = event.notes.split("Selected time: ")[1].split("\n")[0]
-        else:
-            time_text = "TBD"
+            # Fallback to notes parsing
+            if event.notes and "Proposed dates:" in event.notes:
+                date_text = event.notes.split("Proposed dates: ")[1].split("\n")[0]
+            else:
+                date_text = "TBD"
+            
+            if event.notes and "Selected time:" in event.notes:
+                time_text = event.notes.split("Selected time: ")[1].split("\n")[0]
+            else:
+                time_text = "TBD"
         
         # Get venue info
         venue_name = "TBD"
         if event.selected_venue:
             venue_name = event.selected_venue.get('name', 'Selected venue')
+        elif event.activity:
+            venue_name = event.activity
         
         # Get guest list
         guest_names = [guest.name for guest in event.guests]
         guest_list = ', '.join(guest_names)
         
         confirmation_msg = "🎉 Event Ready to Send!\n\n"
-        confirmation_msg += f"📅 Date: {dates_text}\n"
+        confirmation_msg += f"📅 Date: {date_text}\n"
         confirmation_msg += f"🕒 Time: {time_text}\n"
-        confirmation_msg += f"📍 Location: {event.location or 'TBD'}\n"
-        confirmation_msg += f"🏢 Activity: {event.activity or 'TBD'}\n"
         confirmation_msg += f"🏪 Venue: {venue_name}\n"
         confirmation_msg += f"👥 Attendees: {guest_list}\n\n"
         confirmation_msg += "Would you like to:\n"
-        confirmation_msg += "1. Send invitations to guests\n"
-        confirmation_msg += "Or reply 'restart' to start over with a new event"
+        confirmation_msg += "1. Set a start time\n"
+        confirmation_msg += "2. Send invitations to guests\n"
+        confirmation_msg += "3. Change the activity\n\n"
+        confirmation_msg += "Or reply 'restart' to start over" 
         
         return confirmation_msg

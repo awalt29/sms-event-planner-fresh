@@ -16,7 +16,7 @@ import json
 def test_workflow():
     """Test complete SMS workflow from name collection to availability tracking"""
     
-    base_url = "http://localhost:5000/sms/test"
+    base_url = "http://localhost:5001/sms/test"
     test_phone = "1234567899"  # Completely unique number
     
     print("🧪 Testing Complete SMS Event Planner Workflow")

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, Time, Text, JSON, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, Time, Text, JSON, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from app.models import BaseModel
 
@@ -17,13 +17,22 @@ class Event(BaseModel):
     start_time = Column(Time, nullable=True)
     end_time = Column(Time, nullable=True)
     
+    # Selected time from availability overlaps
+    selected_date = Column(Date, nullable=True)
+    selected_start_time = Column(Time, nullable=True)
+    selected_end_time = Column(Time, nullable=True)
+    
     # Workflow management
     workflow_stage = Column(String(50), nullable=False, default='collecting_guests')
+    previous_workflow_stage = Column(String(50), nullable=True)  # For add guest workflow
     status = Column(String(20), nullable=False, default='planning')
     
     # Venue management
     venue_suggestions = Column(JSON, nullable=True)
     selected_venue = Column(JSON, nullable=True)
+    
+    # Availability calculation results
+    available_windows = Column(JSON, nullable=True)  # Stores calculated overlaps
     
     # Notes and workflow data
     notes = Column(Text, nullable=True)

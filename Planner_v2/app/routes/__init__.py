@@ -1,2 +1,2 @@
 # Routes package
-__all__ = ['sms']
+__all__ = ['sms', 'dashboard']

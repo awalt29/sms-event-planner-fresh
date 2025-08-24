@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block page_title %}Contacts{% endblock %}
+
+{% block content %}
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">All Contacts</h6>
+    </div>
+    <div class="card-body">
+        {% if contacts %}
+            <div class="table-responsive">
+                <table class="table table-bordered" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Phone Number</th>
+                            <th>Owner (Planner)</th>
+                            <th>Events Invited To</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for contact in contacts %}
+                        <tr>
+                            <td>{{ contact.id }}</td>
+                            <td>
+                                <strong>{{ contact.name }}</strong>
+                            </td>
+                            <td>{{ contact.phone_number }}</td>
+                            <td>{{ contact.planner.phone_number }}</td>
+                            <td>
+                                {% set guest_count = contact.guests|length %}
+                                <span class="badge bg-{{ 'primary' if guest_count > 0 else 'secondary' }}">{{ guest_count }}</span>
+                            </td>
+                            <td>{{ contact.created_at.strftime('%m/%d/%Y') }}</td>
+                            <td>
+                                <button class="btn btn-sm btn-danger" onclick="deleteContact({{ contact.id }})">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-address-book fa-3x text-gray-300 mb-3"></i>
+                <h5 class="text-muted">No contacts found</h5>
+                <p class="text-muted">Contacts will appear here as planners add them to their events.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if contacts %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Most Active Contacts</h6>
+            </div>
+            <div class="card-body">
+                {% for contact in contacts_by_activity %}
+                <div class="d-flex justify-content-between mb-2">
+                    <div>
+                        <strong>{{ contact.name }}</strong><br>
+                        <small class="text-muted">{{ contact.phone_number }}</small>
+                    </div>
+                    <div class="text-end">
+                        <span class="badge bg-primary">{{ contact.guests|length }} events</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Contact Statistics</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Total Contacts:</span>
+                    <strong>{{ contacts|length }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Contacts with Events:</span>
+                    <strong>{{ contacts_with_events }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Average Events per Contact:</span>
+                    <strong>{{ "%.1f"|format(avg_events_per_contact) }}</strong>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span>Unique Planners:</span>
+                    <strong>{{ unique_planners_count }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Contacts by Planner</h6>
+            </div>
+            <div class="card-body">
+                {% for planner_phone, planner_contacts in contacts|groupby('planner.phone_number') %}
+                <div class="mb-3">
+                    <h6>{{ planner_phone }} <span class="badge bg-secondary">{{ planner_contacts|list|length }} contacts</span></h6>
+                    <div class="ms-3">
+                        {% for contact in planner_contacts %}
+                            <span class="badge bg-light text-dark me-1 mb-1">{{ contact.name }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info mt-4" role="alert">
+    <i class="fas fa-info-circle me-2"></i>
+    <strong>Note:</strong> Deleting a contact will remove them from all events they've been invited to. This action cannot be undone.
+</div>
+{% endif %}
+{% endblock %}

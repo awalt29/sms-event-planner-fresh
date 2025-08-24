@@ -12,7 +12,9 @@ class GuestManagementService:
     
     def __init__(self):
         from app.services.sms_service import SMSService
+        from app.services.message_formatting_service import MessageFormattingService
         self.sms_service = SMSService()
+        self.message_service = MessageFormattingService()
     
     def add_guest_to_event(self, event_id: int, name: str, phone: str = None) -> Guest:
         """Add a single guest to an event"""
@@ -44,7 +46,7 @@ class GuestManagementService:
                 from app.models.event import Event
                 event = Event.query.get(event_id)
                 if event:
-                    self._save_as_contact(event.planner_id, {'name': name, 'phone_number': normalized_phone})
+                    self._save_as_contact(event_id, {'name': name, 'phone_number': normalized_phone})
             
             return guest
             
@@ -90,13 +92,29 @@ class GuestManagementService:
             success = self.sms_service.send_sms(guest.phone_number, message)
             
             if success:
-                # Create guest state for tracking response
-                guest_state = GuestState(
-                    phone_number=guest.phone_number,
-                    event_id=event.id,
-                    current_state='awaiting_availability'
-                )
-                guest_state.save()
+                # Normalize phone number for guest state (consistent with router normalization)
+                normalized_phone = self._normalize_phone(guest.phone_number)
+                
+                # Prepare context data with event dates
+                context_data = self._prepare_availability_context(event)
+                
+                # Create or update guest state for tracking response
+                existing_state = GuestState.query.filter_by(phone_number=normalized_phone).first()
+                if existing_state:
+                    # Update existing state
+                    existing_state.event_id = event.id
+                    existing_state.current_state = 'awaiting_availability'
+                    existing_state.set_state_data(context_data)
+                    existing_state.save()
+                else:
+                    # Create new state
+                    guest_state = GuestState(
+                        phone_number=normalized_phone,
+                        event_id=event.id,
+                        current_state='awaiting_availability'
+                    )
+                    guest_state.set_state_data(context_data)
+                    guest_state.save()
             
             return success
             
@@ -155,21 +173,73 @@ class GuestManagementService:
         
         return None
 
+    def _extract_first_name(self, full_name: str) -> str:
+        """Extract first name from full name, handling titles"""
+        if not full_name:
+            return "Friend"
+        
+        # Split by spaces and clean up
+        name_parts = full_name.strip().split()
+        if not name_parts:
+            return full_name.strip() or "Friend"
+        
+        # Common titles to skip
+        titles = {'dr.', 'dr', 'mr.', 'mr', 'mrs.', 'mrs', 'ms.', 'ms', 'prof.', 'prof'}
+        
+        # Find the first non-title word
+        for part in name_parts:
+            if part.lower().rstrip('.') not in titles:
+                return part
+        
+        # If all parts are titles, just use the first one
+        return name_parts[0]
+
     def _format_availability_request(self, guest: Guest, event: Event, planner) -> str:
         """Format availability request message for guest"""
-        # Parse dates from event notes
-        dates_text = "the proposed dates"
-        if event.notes and "Proposed dates:" in event.notes:
-            dates_text = event.notes.split("Proposed dates: ")[1].split("\n")[0]
+        # Format dates as individual list items
+        date_list = self._format_dates_for_guest_request(event)
         
-        message = f"Hi {guest.name}! {planner.name} wants to hang out on one of these days:\n\n"
-        message += f"- {dates_text}\n\n"
+        message = f"Hi {self._extract_first_name(guest.name)}! {self._extract_first_name(planner.name) if planner.name else 'Your planner'} wants to hang out on one of these days:\n\n"
+        message += f"{date_list}\n\n"
         message += "Reply with your availability. You can say things like:\n\n"
         message += "- 'Friday 2-6pm, Saturday after 4pm'\n"
         message += "- 'Friday all day, Saturday evening'\n"
         message += "- 'Friday after 3pm'"
         
         return message
+    
+    def _format_dates_for_guest_request(self, event: Event) -> str:
+        """Format dates as individual list items for guest requests"""
+        try:
+            # Extract dates from JSON storage if available
+            if event.notes and "Dates JSON:" in event.notes:
+                import json
+                from datetime import datetime
+                dates_json_part = event.notes.split("Dates JSON: ")[1].split("\n")[0]
+                dates = json.loads(dates_json_part)
+                
+                # Format each date as a list item
+                formatted_dates = []
+                for date_str in dates:
+                    try:
+                        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                        formatted_date = date_obj.strftime('%A, %B %-d')
+                        formatted_dates.append(f"- {formatted_date}")
+                    except ValueError:
+                        formatted_dates.append(f"- {date_str}")
+                
+                return '\n'.join(formatted_dates)
+            
+            # Fallback to old format
+            elif event.notes and "Proposed dates:" in event.notes:
+                dates_text = event.notes.split("Proposed dates: ")[1].split("\n")[0]
+                return f"- {dates_text}"
+            
+            return "- the proposed dates"
+            
+        except Exception as e:
+            logger.error(f"Date formatting error for guest request: {e}")
+            return "- the proposed dates"
     
     def _save_as_contact(self, event_id: int, guest_data: Dict):
         """Save guest as contact for future use"""
@@ -204,16 +274,58 @@ class GuestManagementService:
             success = self.sms_service.send_sms(guest.phone_number, message)
             
             if success:
-                # Create guest state for RSVP tracking
-                guest_state = GuestState(
-                    phone_number=guest.phone_number,
-                    event_id=event.id,
-                    current_state='awaiting_rsvp'
-                )
-                guest_state.save()
+                # Normalize phone number for guest state (consistent with router normalization)
+                normalized_phone = self._normalize_phone(guest.phone_number)
+                
+                # Create or update guest state for RSVP tracking
+                existing_state = GuestState.query.filter_by(phone_number=normalized_phone).first()
+                if existing_state:
+                    # Update existing state
+                    existing_state.event_id = event.id
+                    existing_state.current_state = 'awaiting_rsvp'
+                    existing_state.save()
+                else:
+                    # Create new state
+                    guest_state = GuestState(
+                        phone_number=normalized_phone,
+                        event_id=event.id,
+                        current_state='awaiting_rsvp'
+                    )
+                    guest_state.save()
             
             return success
             
         except Exception as e:
             logger.error(f"Error sending invitation: {e}")
             return False
+    
+    def _normalize_phone(self, phone: str) -> str:
+        """Normalize phone number to standard format (consistent with SMS router)"""
+        # Remove all non-digits
+        digits = ''.join(filter(str.isdigit, phone))
+        
+        # Handle different formats
+        if len(digits) == 10:
+            return digits
+        elif len(digits) == 11 and digits.startswith('1'):
+            return digits[1:]
+        
+        return digits  # Return as-is if can't normalize
+    
+    def _prepare_availability_context(self, event: Event) -> dict:
+        """Prepare context data for availability parsing"""
+        try:
+            context = {}
+            
+            # Extract event dates from notes if available
+            if event.notes and "Dates JSON:" in event.notes:
+                import json
+                dates_json_part = event.notes.split("Dates JSON: ")[1].split("\n")[0]
+                dates = json.loads(dates_json_part)
+                context['event_dates'] = dates
+            
+            return context
+            
+        except Exception as e:
+            logger.error(f"Error preparing availability context: {e}")
+            return {}

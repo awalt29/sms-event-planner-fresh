@@ -20,10 +20,9 @@ class LocationCollectionHandler(BaseWorkflowHandler):
                 activity_prompt = "Great! Now what would you like to do?\n\n"
                 activity_prompt += "Examples:\n"
                 activity_prompt += "• 'Coffee'\n"
-                activity_prompt += "• 'Dinner'\n"
-                activity_prompt += "• 'Drinks'\n"
-                activity_prompt += "• 'Movies'\n"
-                activity_prompt += "• 'Shopping'"
+                activity_prompt += "• 'Chinese food'\n"
+                activity_prompt += "• 'Boozy Brunch'\n"
+                activity_prompt += "• 'Drinks at a rooftop bar'"
                 
                 return HandlerResult.success_response(activity_prompt, 'collecting_activity')
             else:

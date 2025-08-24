@@ -8,6 +8,13 @@ echo "Python version: $(python --version)"
 echo "Files in current directory:"
 ls -la
 
+# Ensure we're in the correct directory
+cd /app 2>/dev/null || cd /workspace 2>/dev/null || echo "Using current directory: $(pwd)"
+
+echo "Working directory after cd: $(pwd)"
+echo "Files in working directory:"
+ls -la
+
 # Activate virtual environment if it exists
 if [ -d "/opt/venv" ]; then
     source /opt/venv/bin/activate
@@ -20,6 +27,8 @@ if [ -f "wsgi.py" ]; then
     echo "Found wsgi.py file"
 else
     echo "ERROR: wsgi.py file not found in $(pwd)"
+    echo "Looking for wsgi.py in subdirectories..."
+    find . -name "wsgi.py" -type f 2>/dev/null || echo "No wsgi.py found anywhere"
     exit 1
 fi
 

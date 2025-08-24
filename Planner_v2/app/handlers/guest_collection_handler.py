@@ -47,27 +47,38 @@ class GuestCollectionHandler(BaseWorkflowHandler):
             if guest_data['success']:
                 added_guests = []
                 for guest_info in guest_data['guests']:
+                    # Validate that guest has phone number
+                    if not guest_info.get('phone'):
+                        return HandlerResult.error_response(
+                            "❌ All guests must have phone numbers. Please include phone numbers for all guests."
+                        )
+                    
                     # Add guest using existing service
                     guest = self.guest_service.add_guest_to_event(
                         event.id, 
                         guest_info['name'], 
-                        guest_info.get('phone', 'N/A')
+                        guest_info['phone']
                     )
                     if guest:
                         added_guests.append(guest)
                 
                 if added_guests:
                     guest_names = [f"{g.name} ({g.phone_number})" for g in added_guests]
-                    response = f"Added: {', '.join(guest_names)}\n\n"
+                    response = f"✅ Added: {', '.join(guest_names)}\n\n"
+                    
+                    # Show current guest list
+                    response += self._generate_guest_list_display(event)
+                    
+                    # Show updated contact list so users can continue adding
+                    response += self._generate_contact_list_display(event)
                     response += "Add more guests, or reply 'done' when finished."
                     return HandlerResult.success_response(response)
             
             # If parsing failed, provide helpful error
             return HandlerResult.error_response(
                 "❌ Could not parse guest information. Please use format like:\n"
-                "- 'John Doe, 555-1234'\n"
-                "- 'Mary 5105935336'\n"
-                "- 'Sarah and Mike'"
+                "- 'John Doe, 111-555-1234'\n"
+                "- 'Mary 5105935336'"
             )
                 
         except Exception as e:
@@ -117,7 +128,13 @@ class GuestCollectionHandler(BaseWorkflowHandler):
             
             if added_guests:
                 guest_names = [guest.name for guest in added_guests]
-                response_msg = f"Added from contacts: {', '.join(guest_names)}\n\n"
+                response_msg = f"✅ Added: {', '.join(guest_names)}\n\n"
+                
+                # Show current guest list
+                response_msg += self._generate_guest_list_display(event)
+                
+                # Show updated contact list so users can continue adding
+                response_msg += self._generate_contact_list_display(event)
                 response_msg += "Add more guests or reply 'done' when finished."
                 return HandlerResult.success_response(response_msg)
             else:
@@ -152,24 +169,53 @@ class GuestCollectionHandler(BaseWorkflowHandler):
             prompt = f"""Parse guest information from: "{text}"
 
 Return JSON with:
-- success: true/false
-- guests: array with name and phone (phone optional)
+- success: true/false  
+- guests: array with name and phone (phone REQUIRED)
 - error: string if failed
+
+IMPORTANT: All guests must have phone numbers. Reject inputs without phone numbers.
+
+PHONE NUMBER FORMATS TO ACCEPT:
+- Standard: "John 5105935336", "Mary Smith 111-555-1234"
+- With parentheses: "Aaron(9145606464)", "Sarah(555) 123-4567"
+- With formatting: "Mike (555) 123-4567", "Lisa 555.123.4567"
+- Various separators: "Tom,5551234567", "Jane - 555-1234"
+- Mixed formats: "Bob Smith(555)1234567", "Alice:555-123-4567"
+
+EXTRACT PHONE NUMBERS FROM:
+- Numbers in parentheses: Aaron(9145606464) -> name="Aaron", phone="9145606464"
+- Numbers with dashes: John 555-123-4567 -> name="John", phone="5551234567"
+- Numbers with spaces: Mary 555 123 4567 -> name="Mary", phone="5551234567"
+- Numbers with dots: Tom 555.123.4567 -> name="Tom", phone="5551234567"
 
 Examples:
 "John 5105935336" -> {{"success": true, "guests": [{{"name": "John", "phone": "5105935336"}}]}}
-"Mary Smith, 555-1234" -> {{"success": true, "guests": [{{"name": "Mary Smith", "phone": "5551234"}}]}}
-"Sarah and Mike" -> {{"success": true, "guests": [{{"name": "Sarah"}}, {{"name": "Mike"}}]}}
+"Aaron(9145606464)" -> {{"success": true, "guests": [{{"name": "Aaron", "phone": "9145606464"}}]}}
+"Mary Smith, 111-555-1234" -> {{"success": true, "guests": [{{"name": "Mary Smith", "phone": "1115551234"}}]}}
+"Bob(555) 123-4567" -> {{"success": true, "guests": [{{"name": "Bob", "phone": "5551234567"}}]}}
+"Sarah and Mike" -> {{"success": false, "error": "Phone numbers required for all guests"}}
 "hello" -> {{"success": false, "error": "No guest info found"}}"""
 
             logger.info(f"Guest collection - attempting AI parsing for: '{text}'")
             response = self.ai_service.make_completion(prompt, 200)
             logger.info(f"Guest collection - AI response: {response}")
             
-            if response:
-                result = json.loads(response)
-                logger.info(f"Guest collection - AI parsing result: {result}")
-                return result
+            if response and response.strip():
+                try:
+                    # Extract JSON from response - AI sometimes adds markdown formatting
+                    import re
+                    json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group()
+                        result = json.loads(json_str)
+                        logger.info(f"Guest collection - AI parsing result: {result}")
+                        return result
+                    else:
+                        logger.error(f"Guest collection - No JSON found in AI response: '{response}'")
+                except json.JSONDecodeError as je:
+                    logger.error(f"Guest collection - JSON parsing error: {je}, Response: '{response}'")
+            else:
+                logger.error(f"Guest collection - AI returned empty/None response for input: '{text}'")
                 
         except Exception as e:
             logger.error(f"Guest collection AI parsing error: {e}")
@@ -178,39 +224,98 @@ Examples:
         return None
     
     def _regex_parse_guest(self, text: str) -> dict:
-        """Regex fallback for guest collection step"""
-        # Pattern: name followed by phone
-        pattern = r'([A-Za-z\s]+)[\s,]+(\d{10,})'
-        match = re.search(pattern, text.strip())
+        """Regex fallback for guest collection step - requires phone numbers"""
+        import re
         
-        if match:
-            name = match.group(1).strip()
-            phone = re.sub(r'\D', '', match.group(2))
-            return {
-                'success': True,
-                'guests': [{'name': name, 'phone': phone}]
-            }
+        # Enhanced patterns to handle various phone number formats
+        patterns = [
+            # Name with phone in parentheses: Aaron(9145606464), Bob(555) 123-4567, Mike(555)1234567
+            r'([A-Za-z\s]+)\(([0-9\-\(\)\s\.]+)\)([0-9\-\s]*)',
+            
+            # Name with phone in parentheses (simple): Aaron(9145606464)
+            r'([A-Za-z\s]+)\(([0-9]+)\)',
+            
+            # Standard: name followed by phone with separator: John Smith, 555-1234
+            r'([A-Za-z\s]+)[\s,:\-]+([0-9\-\(\)\s\.]{10,})',
+            
+            # Name followed by phone with minimal separator: John 5551234567
+            r'([A-Za-z\s]+)\s+([0-9\-\(\)\s\.]{10,})',
+            
+            # Phone number first: 555-1234 John Smith
+            r'([0-9\-\(\)\s\.]{10,})[\s,:\-]+([A-Za-z\s]+)'
+        ]
         
-        # Pattern: just names separated by "and" or comma
-        name_pattern = r'([A-Za-z\s]+)(?:\s+and\s+|\s*,\s*)([A-Za-z\s]+)'
-        name_match = re.search(name_pattern, text.strip())
+        text = text.strip()
         
-        if name_match:
-            names = [name_match.group(1).strip(), name_match.group(2).strip()]
-            guests = [{'name': name} for name in names if name]
-            return {
-                'success': True,
-                'guests': guests
-            }
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                # For patterns with 3 groups (parentheses with additional numbers)
+                if len(match.groups()) == 3:
+                    name = match.group(1).strip()
+                    phone_part1 = re.sub(r'\D', '', match.group(2))
+                    phone_part2 = re.sub(r'\D', '', match.group(3)) if match.group(3) else ''
+                    phone = phone_part1 + phone_part2
+                else:
+                    # For patterns where phone might be first, check which group has digits
+                    group1 = match.group(1).strip()
+                    group2 = match.group(2).strip()
+                    
+                    # Extract digits from both groups to determine which is the phone
+                    digits1 = re.sub(r'\D', '', group1)
+                    digits2 = re.sub(r'\D', '', group2)
+                    
+                    # Determine name and phone based on which has more digits
+                    if len(digits2) >= 10 and len(digits1) < len(digits2):
+                        name = group1
+                        phone = digits2
+                    elif len(digits1) >= 10 and len(digits2) < len(digits1):
+                        name = group2
+                        phone = digits1
+                    elif len(digits2) >= 10:  # Default to second group as phone
+                        name = group1
+                        phone = digits2
+                    elif len(digits1) >= 10:  # Fallback to first group as phone
+                        name = group2
+                        phone = digits1
+                    else:
+                        continue  # Neither group has enough digits
+                
+                # Clean up name (remove extra spaces)
+                name = re.sub(r'\s+', ' ', name).strip()
+                
+                # Validate phone number length
+                if len(phone) >= 10:
+                    return {
+                        'success': True,
+                        'guests': [{'name': name, 'phone': phone}]
+                    }
         
-        # Single name
-        if re.match(r'^[A-Za-z\s]+$', text.strip()):
-            return {
-                'success': True,
-                'guests': [{'name': text.strip()}]
-            }
-        
+        # If no valid pattern found, reject the input
         return {
             'success': False,
-            'error': 'Could not parse guest information'
+            'error': 'Phone number required for all guests'
         }
+    
+    def _generate_guest_list_display(self, event: Event) -> str:
+        """Generate current guest list display"""
+        guests = event.guests
+        if guests:
+            display = "Guest list:\n"
+            for guest in guests:
+                display += f"- {guest.name}\n"
+            display += "\n"
+            return display
+        return "Guest list: (none yet)\n\n"
+    
+    def _generate_contact_list_display(self, event: Event) -> str:
+        """Generate contact list display for reuse"""
+        contacts = Contact.query.filter_by(planner_id=event.planner_id).order_by(Contact.name).all()
+        if contacts:
+            display = "Select contacts (e.g. '1,3') or add new guests (e.g. 'John Doe, 123-456-7890').\n\n"
+            display += "Contacts:\n"
+            for i, contact in enumerate(contacts, 1):
+                display += f"{i}. {contact.name} ({contact.phone_number})\n"
+            display += "\n"
+            return display
+        return ""

@@ -10,6 +10,5 @@ cmds = [
     ". /opt/venv/bin/activate && pip install -r requirements.txt"
 ]
 
-# Use the Procfile instead of overriding
-# [phases.start]
-# [start]
+[start]
+cmd = "chmod +x start.sh && ./start.sh"

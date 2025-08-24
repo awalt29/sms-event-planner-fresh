@@ -93,6 +93,7 @@ Examples:
             'collecting_location': ['collecting_activity'],
             'collecting_activity': ['selecting_venue'],
             'selecting_venue': ['final_confirmation', 'collecting_activity', 'collecting_location'],
-            'final_confirmation': ['finalized']
+            'final_confirmation': ['finalized'],
+            'adding_guest': ['awaiting_availability', 'selecting_time', 'selecting_venue', 'collecting_activity', 'collecting_location', 'final_confirmation']  # Can return to various stages
         }
         return transitions.get(current_stage, [])

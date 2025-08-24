@@ -7,7 +7,7 @@ A sophisticated SMS-based event planning application that manages complex conver
 ## Visual Flow Documentation (From Screenshots)
 
 ### Complete Planner Journey
-1. **Welcome & Setup**: "🎉 Welcome to Event Planner! What's your name?" → Name collection
+1. **Welcome & Setup**: "🎉 Welcome to Gatherly! What's your name?" → Name collection
 2. **Guest Collection**: Contact-based guest addition with phone number validation and previous contact selection
 3. **Date Planning**: Natural language date input ("Monday") with confirmation menus showing 3 options
 4. **Availability Coordination**: Automated guest notification with real-time status tracking
@@ -1138,7 +1138,7 @@ class ConfirmationMenuHandler(BaseWorkflowHandler):
                 event.save()
                 
                 return HandlerResult.success_response(
-                    "Availability requests sent via SMS!",
+                    "💌 Availability requests sent via SMS!",
                     'collecting_availability'
                 )
                 
@@ -1511,7 +1511,6 @@ Reply with guest names and phone numbers (e.g. 'John Doe, 123-456-7890') or sele
 Add one guest at a time.
 
 💡 Commands:
-- 'Add guest'
 - 'Remove contact'
 - 'Restart'"""
         

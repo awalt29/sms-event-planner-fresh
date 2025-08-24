@@ -1,45 +1,66 @@
 import logging
+from datetime import time
 from app.handlers import BaseWorkflowHandler, HandlerResult
 from app.models.event import Event
+from app.services.availability_service import AvailabilityService
 
 logger = logging.getLogger(__name__)
 
 class TimeSelectionHandler(BaseWorkflowHandler):
     """Handles time selection after availability collection"""
     
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.availability_service = AvailabilityService()
+    
     def handle_message(self, event: Event, message: str) -> HandlerResult:
         try:
-            # For now, store the selected time and move to location collection
-            # In a full implementation, this would analyze availability overlaps
-            # and present optimal time slots
-            
             message_lower = message.lower().strip()
             
             # Handle time selection (e.g., "1", "2", "3" for time slot options)
             if message.strip().isdigit():
                 slot_number = int(message.strip())
                 
-                # Mock time selection - in real implementation would use availability data
-                if slot_number == 1:
-                    time_text = "2:00pm-6:00pm"
-                elif slot_number == 2:
-                    time_text = "6:00pm-10:00pm"
+                # Get the actual availability overlaps for this event
+                overlaps = self.availability_service.calculate_availability_overlaps(event.id)
+                
+                if overlaps and 1 <= slot_number <= len(overlaps):
+                    selected_overlap = overlaps[slot_number - 1]
+                    
+                    # Format the time text using actual overlap data
+                    if selected_overlap.get('all_day'):
+                        time_text = f"{selected_overlap['date'].strftime('%A, %B %-d')} - All day"
+                    else:
+                        start_time = selected_overlap.get('start_time', '00:00')
+                        end_time = selected_overlap.get('end_time', '23:59')
+                        date_str = selected_overlap['date'].strftime('%A, %B %-d')
+                        time_text = f"{date_str}: {start_time}-{end_time}"
+                    
+                    # Convert string times to time objects for database storage
+                    def parse_time_string(time_str):
+                        """Convert time string like '14:00' to time object"""
+                        if isinstance(time_str, str) and ':' in time_str:
+                            hour, minute = map(int, time_str.split(':'))
+                            return time(hour, minute)
+                        elif hasattr(time_str, 'time'):  # It's already a time object
+                            return time_str
+                        else:
+                            return None
+                    
+                    # Store selected time in event
+                    event.selected_date = selected_overlap['date']
+                    event.selected_start_time = parse_time_string(selected_overlap.get('start_time'))
+                    event.selected_end_time = parse_time_string(selected_overlap.get('end_time'))
+                    event.save()
+                    
+                    # Transition to activity collection with venue options
+                    activity_prompt = "Perfect! Time selected. Now for the activity:\n\n"
+                    activity_prompt += "🍕 Enter a venue/activity (e.g., Joe's Pizza, Hangout at Jude's)\n\n"
+                    activity_prompt += "🔮 Or text '1' for activity suggestions\n\n"
+                    
+                    return HandlerResult.success_response(activity_prompt, 'collecting_activity')
                 else:
-                    time_text = "Evening"
-                
-                # Store selected time in notes
-                current_notes = event.notes or ""
-                event.notes = f"{current_notes}\nSelected time: {time_text}"
-                event.save()
-                
-                # Transition to location collection
-                location_prompt = "Perfect! Now where would you like to meet?\n\n"
-                location_prompt += "Examples:\n"
-                location_prompt += "• 'Manhattan'\n"
-                location_prompt += "• 'Downtown Brooklyn'\n"
-                location_prompt += "• 'Central Park area'"
-                
-                return HandlerResult.success_response(location_prompt, 'collecting_location')
+                    return HandlerResult.error_response(f"Please select a number between 1 and {len(overlaps) if overlaps else 0}.")
             
             # Handle natural language time input
             else:
@@ -54,14 +75,15 @@ class TimeSelectionHandler(BaseWorkflowHandler):
                     event.notes = f"{current_notes}\nSelected time: {time_text}"
                     event.save()
                     
-                    # Transition to location collection
-                    location_prompt = "Perfect! Now where would you like to meet?\n\n"
-                    location_prompt += "Examples:\n"
-                    location_prompt += "• 'Manhattan'\n"
-                    location_prompt += "• 'Downtown Brooklyn'\n"
-                    location_prompt += "• 'Central Park area'"
-                    
-                    return HandlerResult.success_response(location_prompt, 'collecting_location')
+                    # Transition to combined activity/location collection with venue options
+                    activity_prompt = "Perfect! Now for the venue:\n\n"
+                    activity_prompt += "🍕 Enter a specific place (e.g., 'Shake Shack', 'Joe's Pizza')\n"
+                    activity_prompt += "🎯 Or text '1' for activity suggestions\n\n"
+                    activity_prompt += "Examples of specific places:\n"
+                    activity_prompt += "• Shake Shack\n"
+                    activity_prompt += "• Starbucks\n"
+                    activity_prompt += "• Central Park"
+                    return HandlerResult.success_response(activity_prompt, 'collecting_activity')
                 else:
                     return HandlerResult.error_response(
                         "I couldn't understand that time. Please try again or pick a number from the options above."

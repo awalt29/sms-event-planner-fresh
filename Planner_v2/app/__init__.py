@@ -27,16 +27,18 @@ def create_app(config_name=None):
     
     # Register blueprints
     from app.routes.sms import sms_bp
+    from app.routes.dashboard import dashboard_bp
     app.register_blueprint(sms_bp, url_prefix='/sms')
+    app.register_blueprint(dashboard_bp)
     
     # Add health check endpoint
     @app.route('/health')
     def health_check():
-        return {'status': 'healthy', 'message': 'SMS Event Planner is running'}, 200
+        return {'status': 'healthy', 'message': 'Gatherly is running'}, 200
     
-    @app.route('/')
-    def index():
-        return {'message': 'SMS Event Planner API', 'version': '2.0', 'status': 'active'}, 200
+    @app.route('/api')
+    def api_info():
+        return {'message': 'Gatherly API', 'version': '2.0', 'status': 'active'}, 200
     
     # Import models to ensure they're registered with SQLAlchemy
     with app.app_context():

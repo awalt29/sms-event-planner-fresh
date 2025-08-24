@@ -12,7 +12,17 @@ class FinalConfirmationHandler(BaseWorkflowHandler):
             message_lower = message.lower().strip()
             
             # Handle confirmation options
-            if message_lower in ['1', 'send', 'send invitations']:
+            if message_lower in ['1', 'set a start time', 'set start time', 'start time']:
+                # Ask for specific start time
+                start_time_prompt = "What time would you like to start?\n\n"
+                start_time_prompt += "Examples:\n"
+                start_time_prompt += "• '3pm'\n"
+                start_time_prompt += "• '7:30pm'\n"
+                start_time_prompt += "• '6pm'"
+                
+                return HandlerResult.success_response(start_time_prompt, 'setting_start_time')
+                
+            elif message_lower in ['2', 'send', 'send invitations']:
                 # Send invitations to all guests
                 success_count = 0
                 total_guests = len(event.guests)
@@ -38,6 +48,13 @@ class FinalConfirmationHandler(BaseWorkflowHandler):
                         "Some invitations may have failed. You can check with guests directly."
                     )
             
+            elif message_lower in ['3', 'change activity', 'change the activity', 'activity']:
+                # Go back to activity selection
+                activity_prompt = "🍕 Enter a venue/activity (e.g., Joe's Pizza, Hangout at Jude's)\n\n"
+                activity_prompt += "🔮 Or text '1' for activity suggestions"
+                
+                return HandlerResult.success_response(activity_prompt, 'collecting_activity')
+            
             elif message_lower in ['restart', 'start over']:
                 # Cancel current event and start fresh
                 event.status = 'cancelled'
@@ -60,7 +77,7 @@ class FinalConfirmationHandler(BaseWorkflowHandler):
             elif message_lower in ['edit guests', 'change guests', 'guests']:
                 guest_prompt = "Who's coming?\n\n"
                 guest_prompt += "Add guests with names and phone numbers:\n"
-                guest_prompt += "Example: 'John Doe, 123-456-7890'"
+                guest_prompt += "(E.g., John Doe, 123-456-7890)"
                 
                 return HandlerResult.success_response(guest_prompt, 'collecting_guests')
             
@@ -91,8 +108,11 @@ class FinalConfirmationHandler(BaseWorkflowHandler):
             
             else:
                 return HandlerResult.error_response(
-                    "Please reply '1' to send invitations or 'restart' to start over.\n"
-                    "You can also say 'edit [guests/date/venue/location/activity]' to make changes."
+                    "Please reply:\n"
+                    "1. Set a start time\n"
+                    "2. Send invitations to guests\n"
+                    "3. Change the activity\n\n"
+                    "Or reply 'restart' to start over."
                 )
                 
         except Exception as e:
