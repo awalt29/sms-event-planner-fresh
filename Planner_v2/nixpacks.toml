@@ -11,4 +11,4 @@ cmds = [
 ]
 
 [start]
-cmd = "chmod +x start.sh && ./start.sh"
+cmd = ". /opt/venv/bin/activate && gunicorn run:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --log-level info"
