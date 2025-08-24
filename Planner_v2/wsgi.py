@@ -15,20 +15,24 @@ print(f"Python path: {sys.path}")
 
 from app import create_app, db
 
-# Create the Flask application with production config
-app = create_app('production')
-print("Flask app created successfully")
-
-# Initialize database tables
-with app.app_context():
-    try:
-        db.create_all()
-        print("Database tables created successfully")
-    except Exception as e:
-        print(f"Database initialization error: {e}")
+# Create the Flask application - it will auto-detect environment
+try:
+    app = create_app()  # Will use 'production' if FLASK_ENV is set, otherwise 'default'
+    print("Flask app created successfully")
+    
+    # Initialize database tables
+    with app.app_context():
+        try:
+            db.create_all()
+            print("Database tables created successfully")
+        except Exception as e:
+            print(f"Database initialization error: {e}")
+            
+except Exception as e:
+    print(f"Error creating Flask app: {e}")
+    raise  # Re-raise the exception so Railway sees the error
 
 if __name__ == '__main__':
     # For direct execution (not used with Gunicorn)
-    app.run(host='0.0.0.0', port=8080)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
