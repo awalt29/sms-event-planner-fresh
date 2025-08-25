@@ -31,22 +31,28 @@ try:
                 db.create_all()
                 print("Database tables created successfully")
             else:
-                print("INITIALIZE_DB=false - Preserving existing data, checking database connection...")
-                # Verify database connection without destroying data
+                print(f"🔍 DATABASE DEBUG INFO:")
+                print(f"   INITIALIZE_DB environment variable: {os.getenv('INITIALIZE_DB', 'not set')}")
+                print(f"   INITIALIZE_DB parsed value: {INITIALIZE_DB}")
+                print(f"   DATABASE_URL: {os.getenv('DATABASE_URL', 'not set')}")
+                print("🛡️  INITIALIZE_DB=false - Attempting to preserve existing data...")
+                
+                # Check if tables actually exist (not just database connection)
                 try:
-                    # Use SQLAlchemy 2.0+ syntax for database connection test
+                    # Try to query a table that should exist if database is initialized
                     with db.engine.connect() as conn:
-                        conn.execute(db.text('SELECT 1'))
-                    print("Database connection verified - existing data preserved")
-                except Exception as connection_error:
-                    # Only create tables if database appears completely empty/new
-                    if any(phrase in str(connection_error).lower() for phrase in 
-                          ["does not exist", "no such table", "relation does not exist"]):
-                        print("Database appears new, creating tables...")
+                        result = conn.execute(db.text('SELECT COUNT(*) FROM planners'))
+                        count = result.scalar()
+                        print(f"✅ Database tables exist - existing data preserved")
+                except Exception as table_error:
+                    # Tables don't exist - this is a new deployment, create them
+                    error_msg = str(table_error).lower()
+                    if any(phrase in error_msg for phrase in ["does not exist", "no such table", "relation does not exist"]):
+                        print("🆕 Tables don't exist - creating database schema for new deployment...")
                         db.create_all()
-                        print("Database tables created for new deployment")
+                        print("✅ Database tables created for new deployment")
                     else:
-                        print(f"Database connection error: {connection_error}")
+                        print(f"❌ Unexpected database error: {table_error}")
                         raise
                         
         except Exception as e:
