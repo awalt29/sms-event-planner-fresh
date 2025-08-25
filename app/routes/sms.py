@@ -650,7 +650,6 @@ class SMSRouter:
         return message
 
 # Initialize router
-router = SMSRouter()
 
 @sms_bp.route('/webhook', methods=['POST'])
 def sms_webhook():
@@ -671,6 +670,7 @@ def sms_webhook():
         start_time = time.time()
         
         # Route message and get response
+        router = SMSRouter()
         response_text = router.route_message(from_number, message_body)
         
         # Log performance metrics
