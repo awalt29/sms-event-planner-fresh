@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block page_title %}Planners{% endblock %}
+
+{% block content %}
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">All Planners</h6>
+    </div>
+    <div class="card-body">
+        {% if planners %}
+            <div class="table-responsive">
+                <table class="table table-bordered" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Phone Number</th>
+                            <th>Events Created</th>
+                            <th>Contacts</th>
+                            <th>Created</th>
+                            <th>Last Activity</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for planner in planners %}
+                        <tr>
+                            <td>{{ planner.id }}</td>
+                            <td>
+                                <strong>{{ planner.phone_number }}</strong>
+                            </td>
+                            <td>
+                                <span class="badge bg-primary">{{ planner.events|length }}</span>
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ planner.contacts|length }}</span>
+                            </td>
+                            <td>{{ planner.created_at.strftime('%m/%d/%Y') }}</td>
+                            <td>
+                                {% if planner.events %}
+                                    {% set latest_event = planner.events|sort(attribute='updated_at', reverse=true)|first %}
+                                    {{ latest_event.updated_at.strftime('%m/%d/%Y %I:%M %p') }}
+                                {% else %}
+                                    <span class="text-muted">No activity</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-danger" onclick="deletePlanner({{ planner.id }})">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-users fa-3x text-gray-300 mb-3"></i>
+                <h5 class="text-muted">No planners found</h5>
+                <p class="text-muted">Planners will appear here when they send their first SMS message.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if planners %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Planner Activity</h6>
+            </div>
+            <div class="card-body">
+                {% for planner in planners_by_activity %}
+                <div class="d-flex justify-content-between mb-2">
+                    <div>
+                        <strong>{{ planner.phone_number }}</strong><br>
+                        <small class="text-muted">{{ planner.events|length }} events, {{ planner.contacts|length }} contacts</small>
+                    </div>
+                    <div class="text-end">
+                        {% if planner.events %}
+                            {% set latest_event = planner.events|sort(attribute='updated_at', reverse=true)|first %}
+                            <small class="text-muted">{{ latest_event.updated_at.strftime('%m/%d') }}</small>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Statistics</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Total Planners:</span>
+                    <strong>{{ planners|length }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Active (with events):</span>
+                    <strong>{{ active_planners_count }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Average Events per Planner:</span>
+                    <strong>{{ "%.1f"|format(avg_events_per_planner) }}</strong>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span>Total Contacts:</span>
+                    <strong>{{ total_contacts_by_planners }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-warning mt-4" role="alert">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    <strong>Warning:</strong> Deleting a planner will permanently remove all their events, guests, and associated data. This action cannot be undone.
+</div>
+{% endif %}
+{% endblock %}
