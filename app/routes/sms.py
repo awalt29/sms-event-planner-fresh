@@ -20,6 +20,16 @@ from app.handlers.confirmation_menu_handler import ConfirmationMenuHandler
 from app.handlers.availability_tracking_handler import AvailabilityTrackingHandler
 
 logger = logging.getLogger(__name__)
+
+# Module-level router - initialized when Flask app creates application context
+router = None
+
+def init_router():
+    """Initialize SMS router with Flask application context"""
+    global router
+    if router is None:
+        router = SMSRouter()
+    return router
 sms_bp = Blueprint("sms", __name__)
 
 class SMSRouter:
@@ -670,7 +680,7 @@ def sms_webhook():
         start_time = time.time()
         
         # Route message and get response
-        router = SMSRouter()
+        router = init_router()
         response_text = router.route_message(from_number, message_body)
         
         # Log performance metrics
