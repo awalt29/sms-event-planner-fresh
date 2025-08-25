@@ -54,6 +54,12 @@ class TimeSelectionHandler(BaseWorkflowHandler):
                     event.selected_date = selected_overlap['date']
                     event.selected_start_time = parse_time_string(selected_overlap.get('start_time'))
                     event.selected_end_time = parse_time_string(selected_overlap.get('end_time'))
+                    
+                    # Store available guests for this selected time
+                    available_guests = selected_overlap.get('available_guests', [])
+                    import json
+                    current_notes = event.notes or ""
+                    event.notes = f"{current_notes}\nSelected available guests: {json.dumps(available_guests)}"
                     event.save()
                     
                     # Transition to activity collection with venue options

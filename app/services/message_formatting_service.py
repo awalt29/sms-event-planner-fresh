@@ -216,6 +216,12 @@ class MessageFormattingService:
         invitation_msg += f"🏢 Venue: {venue_info}\n"
         if venue_link:
             invitation_msg += f"{venue_link}\n"
+        
+        # Add guest list (excluding the current recipient)
+        guest_list = self._format_guest_list_for_invitation(event, guest)
+        if guest_list:
+            invitation_msg += f"\n{guest_list}\n"
+        
         invitation_msg += f"\nPlanned by: {self._extract_first_name(event.planner.name) if event.planner.name else 'Your planner'}\n\n"
         invitation_msg += "Please reply 'Yes', 'No', or 'Maybe' to confirm your attendance!"
         
@@ -358,3 +364,50 @@ class MessageFormattingService:
         confirmation_msg += "Or reply 'restart' to start over" 
         
         return confirmation_msg
+    
+    def _format_guest_list_for_invitation(self, event: Event, current_guest: Guest) -> str:
+        """Format guest list for final invitation, using selected available guests if time was selected"""
+        try:
+            # First try to get the guests who are available for the selected time
+            if event.notes and "Selected available guests:" in event.notes:
+                import json
+                # Extract the JSON list from notes
+                guests_json_part = event.notes.split("Selected available guests: ")[1].split("\n")[0]
+                available_guest_names = json.loads(guests_json_part)
+                
+                # Filter out the current recipient
+                other_guests = [name for name in available_guest_names if name != current_guest.name]
+                
+                if not other_guests:
+                    return ""  # No other guests available for selected time
+                
+                # Use the same formatting logic as availability requests
+                if len(other_guests) == 1:
+                    return f"👥 With: {other_guests[0]}"
+                elif len(other_guests) == 2:
+                    return f"👥 With: {other_guests[0]} and {other_guests[1]}"
+                else:
+                    # For 3+ guests: "With: Alex, Mike, and Lisa"
+                    return f"👥 With: {', '.join(other_guests[:-1])}, and {other_guests[-1]}"
+            
+            # Fallback: use all event guests (excluding current recipient)  
+            other_guests = [g for g in event.guests if g.id != current_guest.id and g.name]
+            
+            if not other_guests:
+                return ""  # No other guests to show
+            
+            # Extract first names only for cleaner display
+            guest_names = [self._extract_first_name(g.name) for g in other_guests]
+            
+            # Format the list with proper grammar
+            if len(guest_names) == 1:
+                return f"👥 With: {guest_names[0]}"
+            elif len(guest_names) == 2:
+                return f"👥 With: {guest_names[0]} and {guest_names[1]}"
+            else:
+                # For 3+ guests: "With: Alex, Mike, and Lisa"
+                return f"👥 With: {', '.join(guest_names[:-1])}, and {guest_names[-1]}"
+                
+        except Exception as e:
+            logger.error(f"Error formatting guest list for invitation: {e}")
+            return ""  # Don't show guest list if there's an error
