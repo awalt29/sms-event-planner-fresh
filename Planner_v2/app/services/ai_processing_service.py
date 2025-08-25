@@ -39,11 +39,14 @@ class AIProcessingService:
                 "max_tokens": max_tokens
             }
             
+            # PERFORMANCE OPTIMIZATION: Reduced timeout from 30s to 8s
+            # SMS users expect fast responses - better to fall back to regex parsing
+            # than wait 30 seconds for AI. 8s is reasonable for most API calls.
             response = requests.post(
                 f"{self.base_url}/chat/completions",
                 headers=headers,
                 json=data,
-                timeout=30
+                timeout=8  # Reduced from 30s - fallback to simple parsing if slow
             )
             
             if response.status_code == 200:
