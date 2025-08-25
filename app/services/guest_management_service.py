@@ -153,11 +153,6 @@ class GuestManagementService:
                         'phone_number': normalized_phone
                     })
         
-        if guests:
-            logger.info(f"Regex parsed {len(guests)} guests successfully")
-        else:
-            logger.warning(f"Could not parse guest information from: '{text}'")
-        
         return guests
     
     def _normalize_phone(self, phone: str) -> str:
