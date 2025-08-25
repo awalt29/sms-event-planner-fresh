@@ -196,15 +196,11 @@ class GuestManagementService:
 
     def _format_availability_request(self, guest: Guest, event: Event, planner) -> str:
         """Format availability request message for guest"""
-        logger.info(f"GUEST LIST DEBUG: Formatting availability request for {guest.name}")
-        
         # Format dates as individual list items
         date_list = self._format_dates_for_guest_request(event)
-        logger.info(f"GUEST LIST DEBUG: Date list formatted")
         
         # Format guest list (excluding the current recipient)
         guest_list = self._format_guest_list_for_request(event, guest)
-        logger.info(f"GUEST LIST DEBUG: Guest list result: '{guest_list}'")
         
         message = f"Hi {self._extract_first_name(guest.name)}! {self._extract_first_name(planner.name) if planner.name else 'Your planner'} wants to hang out on one of these days:\n\n"
         message += f"{date_list}\n\n"
@@ -212,48 +208,33 @@ class GuestManagementService:
         # Add guest list if there are other guests
         if guest_list:
             message += f"{guest_list}\n\n"
-            logger.info(f"GUEST LIST DEBUG: Added guest list to message")
-        else:
-            logger.info(f"GUEST LIST DEBUG: No guest list added (empty)")
         
         message += "Reply with your availability. You can say things like:\n\n"
         message += "- 'Friday 2-6pm, Saturday after 4pm'\n"
         message += "- 'Friday all day, Saturday evening'\n"
         message += "- 'Friday after 3pm'"
         
-        logger.info(f"GUEST LIST DEBUG: Final message length: {len(message)} chars")
         return message
     
     def _format_guest_list_for_request(self, event: Event, current_guest: Guest) -> str:
         """Format guest list for availability request, excluding the current recipient"""
-        logger.info(f"GUEST LIST DEBUG: Event ID {event.id}, Current guest: {current_guest.name}")
-        
         # Get all other guests (excluding the current recipient)
-        all_guests = event.guests
-        logger.info(f"GUEST LIST DEBUG: All guests in event: {[g.name for g in all_guests]}")
-        
         other_guests = [g for g in event.guests if g.id != current_guest.id]
-        logger.info(f"GUEST LIST DEBUG: Other guests (excluding {current_guest.name}): {[g.name for g in other_guests]}")
         
         if not other_guests:
-            logger.info(f"GUEST LIST DEBUG: No other guests found - returning empty string")
             return ""  # No other guests to show
         
         # Extract first names only for cleaner display
         guest_names = [self._extract_first_name(g.name) for g in other_guests]
-        logger.info(f"GUEST LIST DEBUG: Guest first names: {guest_names}")
         
         # Format the list with proper grammar
         if len(guest_names) == 1:
-            result = f"👥 With: {guest_names[0]}"
+            return f"👥 With: {guest_names[0]}"
         elif len(guest_names) == 2:
-            result = f"👥 With: {guest_names[0]} and {guest_names[1]}"
+            return f"👥 With: {guest_names[0]} and {guest_names[1]}"
         else:
             # For 3+ guests: "With: Alex, Mike, and Lisa"
-            result = f"👥 With: {', '.join(guest_names[:-1])}, and {guest_names[-1]}"
-        
-        logger.info(f"GUEST LIST DEBUG: Final result: '{result}'")
-        return result
+            return f"👥 With: {', '.join(guest_names[:-1])}, and {guest_names[-1]}"
     
     def _format_dates_for_guest_request(self, event: Event) -> str:
         """Format dates as individual list items for guest requests"""
