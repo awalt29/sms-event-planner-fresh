@@ -684,7 +684,10 @@ def sms_webhook():
         return str(resp)
         
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
         logger.error(f"Error in SMS webhook: {e}")
+        logger.error(f"Full traceback: {error_details}")
         resp = MessagingResponse()
         resp.message("Sorry, there was an error processing your message. Please try again.")
         return str(resp)
