@@ -34,7 +34,11 @@ class AvailabilityTrackingHandler(BaseWorkflowHandler):
                     return self._handle_partial_overlap_request(event)
                 else:
                     # Everyone responded - show final overlaps
-                    overlaps = self.availability_service.calculate_availability_overlaps(event.id)
+                    # For single guest case, use show_individual_availability=True
+                    responded_guests = [guest for guest in event.guests if guest.availability_provided]
+                    show_individual = len(responded_guests) == 1
+                    
+                    overlaps = self.availability_service.calculate_availability_overlaps(event.id, show_individual_availability=show_individual)
                     if overlaps:
                         time_msg = self.message_service.format_time_selection_options(overlaps, event)
                         return HandlerResult.success_response(time_msg, 'selecting_time')

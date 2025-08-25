@@ -22,7 +22,10 @@ class TimeSelectionHandler(BaseWorkflowHandler):
                 slot_number = int(message.strip())
                 
                 # Get the actual availability overlaps for this event
-                overlaps = self.availability_service.calculate_availability_overlaps(event.id)
+                # Use same logic as availability tracking handler for consistency
+                responded_guests = [guest for guest in event.guests if guest.availability_provided]
+                show_individual = len(responded_guests) == 1
+                overlaps = self.availability_service.calculate_availability_overlaps(event.id, show_individual_availability=show_individual)
                 
                 if overlaps and 1 <= slot_number <= len(overlaps):
                     selected_overlap = overlaps[slot_number - 1]
