@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block page_title %}Events{% endblock %}
+
+{% block content %}
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">All Events</h6>
+    </div>
+    <div class="card-body">
+        {% if events %}
+            <div class="table-responsive">
+                <table class="table table-bordered" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Event Name</th>
+                            <th>Planner</th>
+                            <th>Stage</th>
+                            <th>Selected Date</th>
+                            <th>Selected Time</th>
+                            <th>Venue</th>
+                            <th>Guests</th>
+                            <th>Created</th>
+                            <th>Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for event in events %}
+                        <tr>
+                            <td>{{ event.id }}</td>
+                            <td>{{ event.title or 'Unnamed Event' }}</td>
+                            <td>{{ event.planner.phone_number }}</td>
+                            <td>
+                                <span class="badge bg-{{ 'success' if event.workflow_stage == 'final_confirmation' else 'primary' }}">
+                                    {{ event.workflow_stage.replace('_', ' ').title() }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if event.selected_date %}
+                                    {{ event.selected_date.strftime('%m/%d/%Y') }}
+                                {% else %}
+                                    <span class="text-muted">Not set</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if event.selected_start_time %}
+                                    {{ event.selected_start_time.strftime('%I:%M %p').lstrip('0') }}
+                                {% else %}
+                                    <span class="text-muted">Not set</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if event.selected_venue and event.selected_venue is string %}
+                                    {% if event.selected_venue|length > 50 %}
+                                        {{ event.selected_venue[:50] }}...
+                                    {% else %}
+                                        {{ event.selected_venue }}
+                                    {% endif %}
+                                {% elif event.selected_venue and event.selected_venue is mapping %}
+                                    {% set venue_name = event.selected_venue.get('name', event.selected_venue.get('venue_name', 'Unknown Venue')) %}
+                                    {% if venue_name|length > 50 %}
+                                        {{ venue_name[:50] }}...
+                                    {% else %}
+                                        {{ venue_name }}
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">Not set</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ event.guests|length }}</span>
+                            </td>
+                            <td>{{ event.created_at.strftime('%m/%d/%Y %I:%M %p') }}</td>
+                            <td>{{ event.updated_at.strftime('%m/%d/%Y %I:%M %p') }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-calendar fa-3x text-gray-300 mb-3"></i>
+                <h5 class="text-muted">No events found</h5>
+                <p class="text-muted">Events will appear here as planners create them via SMS.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if events %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Events by Stage</h6>
+            </div>
+            <div class="card-body">
+                {% for stage, count in events_by_stage.items() %}
+                <div class="d-flex justify-content-between">
+                    <span>{{ stage.replace('_', ' ').title() }}</span>
+                    <strong>{{ count }}</strong>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Recent Activity</h6>
+            </div>
+            <div class="card-body">
+                {% for event in events %}
+                {% if loop.index <= 5 %}
+                <div class="d-flex justify-content-between mb-2">
+                    <div>
+                        <strong>{{ event.event_name or 'Unnamed Event' }}</strong><br>
+                        <small class="text-muted">{{ event.planner.phone_number }}</small>
+                    </div>
+                    <small class="text-muted">{{ event.updated_at.strftime('%m/%d %I:%M %p') }}</small>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
