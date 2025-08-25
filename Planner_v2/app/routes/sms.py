@@ -666,8 +666,16 @@ def sms_webhook():
             logger.error("Missing phone number or message body")
             return str(MessagingResponse())
         
+        # PERFORMANCE MONITORING: Track SMS response times
+        import time
+        start_time = time.time()
+        
         # Route message and get response
         response_text = router.route_message(from_number, message_body)
+        
+        # Log performance metrics
+        processing_time = time.time() - start_time
+        logger.info(f"SMS processed in {processing_time:.3f}s - Response length: {len(response_text)}")
         
         # Create Twilio response
         resp = MessagingResponse()
