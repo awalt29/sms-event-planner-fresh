@@ -248,13 +248,29 @@ class GuestManagementService:
                 
                 # Format each date as a list item
                 formatted_dates = []
-                for date_str in dates:
+                for date_item in dates:
                     try:
+                        # Handle both string and dict formats
+                        if isinstance(date_item, dict):
+                            date_str = date_item.get('date', date_item)
+                            all_day = date_item.get('all_day', False)
+                        else:
+                            date_str = date_item
+                            all_day = False
+                        
                         date_obj = datetime.strptime(date_str, '%Y-%m-%d')
                         formatted_date = date_obj.strftime('%A, %B %-d')
-                        formatted_dates.append(f"- {formatted_date}")
+                        
+                        if all_day:
+                            formatted_dates.append(f"• {formatted_date} - All day")
+                        else:
+                            formatted_dates.append(f"• {formatted_date}")
                     except ValueError:
-                        formatted_dates.append(f"- {date_str}")
+                        # Fallback for unparseable dates
+                        if isinstance(date_item, dict):
+                            formatted_dates.append(f"• {date_item.get('date', str(date_item))}")
+                        else:
+                            formatted_dates.append(f"• {date_item}")
                 
                 return '\n'.join(formatted_dates)
             
