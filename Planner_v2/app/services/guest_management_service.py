@@ -199,14 +199,42 @@ class GuestManagementService:
         # Format dates as individual list items
         date_list = self._format_dates_for_guest_request(event)
         
+        # Format guest list (excluding the current recipient)
+        guest_list = self._format_guest_list_for_request(event, guest)
+        
         message = f"Hi {self._extract_first_name(guest.name)}! {self._extract_first_name(planner.name) if planner.name else 'Your planner'} wants to hang out on one of these days:\n\n"
         message += f"{date_list}\n\n"
+        
+        # Add guest list if there are other guests
+        if guest_list:
+            message += f"{guest_list}\n\n"
+        
         message += "Reply with your availability. You can say things like:\n\n"
         message += "- 'Friday 2-6pm, Saturday after 4pm'\n"
         message += "- 'Friday all day, Saturday evening'\n"
         message += "- 'Friday after 3pm'"
         
         return message
+    
+    def _format_guest_list_for_request(self, event: Event, current_guest: Guest) -> str:
+        """Format guest list for availability request, excluding the current recipient"""
+        # Get all other guests (excluding the current recipient)
+        other_guests = [g for g in event.guests if g.id != current_guest.id]
+        
+        if not other_guests:
+            return ""  # No other guests to show
+        
+        # Extract first names only for cleaner display
+        guest_names = [self._extract_first_name(g.name) for g in other_guests]
+        
+        # Format the list with proper grammar
+        if len(guest_names) == 1:
+            return f"👥 With: {guest_names[0]}"
+        elif len(guest_names) == 2:
+            return f"👥 With: {guest_names[0]} and {guest_names[1]}"
+        else:
+            # For 3+ guests: "With: Alex, Mike, and Lisa"
+            return f"👥 With: {', '.join(guest_names[:-1])}, and {guest_names[-1]}"
     
     def _format_dates_for_guest_request(self, event: Event) -> str:
         """Format dates as individual list items for guest requests"""
