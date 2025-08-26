@@ -129,7 +129,7 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
                     
                     return response_text
             
-            return "Please reply with 1 or 2:\n\n1. Send Availability\n2. Change Availability"
+            return "I couldn't understand your availability. Please try again with something like:\n\n• 'Saturday after 6pm'\n• 'Saturday all day'\n• 'Saturday 2-6pm'"
             
         except Exception as e:
             logger.error(f"Error getting event status: {e}")
