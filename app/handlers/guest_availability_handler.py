@@ -24,6 +24,10 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
         try:
             message_lower = message.lower().strip()
             
+            # Check if user is in confirmation menu state
+            state_data = guest_state.get_state_data()
+            is_in_menu_confirmation = state_data.get('awaiting_menu_choice', False)
+            
             # Handle follow-up commands (these should clean up the guest state)
             if message_lower == '1':
                 response = self._handle_send_availability(guest_state)
@@ -41,6 +45,10 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
                 guest_state.current_state = 'completed'
                 guest_state.save()
                 return "👍 All set! Thanks for providing your availability."
+            
+            # If user is in menu confirmation state and didn't choose 1 or 2, give menu error
+            if is_in_menu_confirmation:
+                return "Please respond with '1' or '2':\n\n1. Send Availability\n2. Change Availability"
             
             # Parse availability using distributed AI parsing
             context = guest_state.get_state_data()
@@ -126,6 +134,12 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
                     response_text += "1. Send Availability\n"
                     response_text += "2. Change Availability\n\n"
                     response_text += "Reply with 1 or 2"
+                    
+                    # Mark that user is now awaiting menu choice
+                    state_data = guest_state.get_state_data()
+                    state_data['awaiting_menu_choice'] = True
+                    guest_state.set_state_data(state_data)
+                    guest_state.save()
                     
                     return response_text
             
@@ -810,7 +824,13 @@ Examples (using actual event dates from context above):
                 # Mark as not provided so they can re-enter
                 guest.availability_provided = False
                 guest.save()
-            
+                
+            # Clear menu confirmation state - they're back to providing availability
+            state_data = guest_state.get_state_data()
+            state_data['awaiting_menu_choice'] = False
+            guest_state.set_state_data(state_data)
+            guest_state.save()
+                
         except Exception as e:
             logger.error(f"Error clearing availability: {e}")
         
