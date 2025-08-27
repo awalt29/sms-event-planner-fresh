@@ -207,7 +207,8 @@ class GuestManagementService:
         message += "Reply with your availability. You can say things like:\n\n"
         message += "- 'Friday 2-6pm, Saturday after 4pm'\n"
         message += "- 'Friday all day, Saturday evening'\n"
-        message += "- 'Friday after 3pm'"
+        message += "- 'Friday after 3pm'\n"
+        message += "- 'Busy' (if you're not available any of these days)"
         
         return message
     
