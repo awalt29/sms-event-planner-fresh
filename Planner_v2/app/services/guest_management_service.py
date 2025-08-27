@@ -153,11 +153,6 @@ class GuestManagementService:
                         'phone_number': normalized_phone
                     })
         
-        if guests:
-            logger.info(f"Regex parsed {len(guests)} guests successfully")
-        else:
-            logger.warning(f"Could not parse guest information from: '{text}'")
-        
         return guests
     
     def _normalize_phone(self, phone: str) -> str:
@@ -212,7 +207,8 @@ class GuestManagementService:
         message += "Reply with your availability. You can say things like:\n\n"
         message += "- 'Friday 2-6pm, Saturday after 4pm'\n"
         message += "- 'Friday all day, Saturday evening'\n"
-        message += "- 'Friday after 3pm'"
+        message += "- 'Friday after 3pm'\n"
+        message += "- 'Busy' (if you're not available any of these days)"
         
         return message
     

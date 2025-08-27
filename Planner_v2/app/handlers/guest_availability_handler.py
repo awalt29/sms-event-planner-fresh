@@ -45,6 +45,9 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
                 guest_state.current_state = 'completed'
                 guest_state.save()
                 return "👍 All set! Thanks for providing your availability."
+            elif message_lower in ['busy', 'not available', 'unavailable', 'can\'t make it', 'cant make it']:
+                # Handle guests who are not available for any of the proposed days
+                return self._handle_busy_response(guest_state)
             
             # If user is in menu confirmation state and didn't choose 1 or 2, give menu error
             if is_in_menu_confirmation:
@@ -851,6 +854,76 @@ Examples (using actual event dates from context above):
             logger.error(f"Error getting event status: {e}")
             return "Event status is being updated. Check back soon!"
     
+    def _handle_busy_response(self, guest_state: GuestState) -> str:
+        """Handle when guest responds that they're busy/unavailable for all proposed days"""
+        try:
+            # Find the guest record
+            guest = Guest.query.filter_by(
+                event_id=guest_state.event_id,
+                phone_number=guest_state.phone_number
+            ).first()
+            
+            # If not found, try with +1 prefix format
+            if not guest:
+                formatted_phone = f"+1{guest_state.phone_number}"
+                guest = Guest.query.filter_by(
+                    event_id=guest_state.event_id,
+                    phone_number=formatted_phone
+                ).first()
+            
+            if guest:
+                # Mark as having provided availability (even though they're unavailable)
+                guest.availability_provided = True
+                guest.save()
+                
+                # Send notification to planner
+                self._send_busy_planner_notification(guest_state, guest)
+            
+            # Mark guest state for cleanup
+            guest_state.current_state = 'completed'
+            guest_state.save()
+            
+            return "Thanks for letting me know! I've notified the planner that you're not available for the proposed dates."
+            
+        except Exception as e:
+            logger.error(f"Error handling busy response: {e}")
+            return "Thanks for the response! I'll let the planner know."
+    
+    def _send_busy_planner_notification(self, guest_state: GuestState, guest: Guest) -> None:
+        """Send notification to planner when guest is busy for all dates"""
+        try:
+            planner_name = guest_state.event.planner.name
+            guest_name = self._extract_first_name(guest.name)
+            
+            # Count remaining guests who haven't responded
+            total_guests = Guest.query.filter_by(event_id=guest_state.event_id).count()
+            responded_guests = Guest.query.filter_by(
+                event_id=guest_state.event_id, 
+                availability_provided=True
+            ).count()
+            remaining_guests = total_guests - responded_guests
+            
+            # Create planner notification message
+            if remaining_guests > 0:
+                planner_message = f"❌ {guest_name} is not available for any of the proposed dates.\n\n"
+                planner_message += f"📊 {responded_guests}/{total_guests} guests have responded\n"
+                planner_message += f"⏳ Waiting for {remaining_guests} more guest" + ("s" if remaining_guests != 1 else "") + "\n\n"
+                planner_message += f"Press 1 to view current overlaps"
+            else:
+                planner_message = f"❌ {guest_name} is not available for any of the proposed dates.\n\n"
+                planner_message += f"📊 All guests have responded!\n\n"
+                planner_message += "Would you like to:\n"
+                planner_message += "1. Pick a time (from available guests)\n"
+                planner_message += "2. Add more guests or dates"
+            
+            # Send SMS to planner
+            planner_phone = guest_state.event.planner.phone_number
+            self.sms_service.send_sms(planner_phone, planner_message)
+            logger.info(f"Sent busy notification to {planner_phone} about {guest_name}'s unavailability")
+            
+        except Exception as e:
+            logger.error(f"Error sending busy planner notification: {e}")
+
     def _validate_availability_entry(self, avail_data: dict) -> dict:
         """Validate a single availability entry for logical consistency"""
         try:
