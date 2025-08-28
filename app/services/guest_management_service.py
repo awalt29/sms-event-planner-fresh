@@ -204,7 +204,7 @@ class GuestManagementService:
         if guest_list:
             message += f"{guest_list}\n\n"
         
-        message += "Reply with your availability and we'll find common times.🗓️ \n\nYou can say things like:\n\n"
+        message += "Reply with your availability and we'll find common times!🗓️ \n\nYou can say things like:\n\n"
         message += "- 'Friday 2-6pm, Saturday after 4pm'\n"
         message += "- 'Friday all day, Saturday evening'\n"
         message += "- 'Friday after 3pm'\n"
