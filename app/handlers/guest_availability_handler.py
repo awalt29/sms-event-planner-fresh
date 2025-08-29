@@ -173,11 +173,54 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
         # If all parts are titles, just use the first one
         return name_parts[0]
 
+    def _format_guest_availability_details(self, guest: Guest) -> str:
+        """Format guest's availability details for planner notification"""
+        try:
+            from app.models.availability import Availability
+            from datetime import datetime
+            
+            # Get all availability records for this guest
+            availability_records = Availability.query.filter_by(
+                event_id=guest.event_id,
+                guest_id=guest.id
+            ).all()
+            
+            if not availability_records:
+                return "- No specific times provided"
+            
+            # Group by date and format
+            availability_lines = []
+            
+            for avail in availability_records:
+                if avail.date:
+                    # Format date as "Friday"
+                    date_str = avail.date.strftime('%A')
+                    
+                    if avail.all_day:
+                        availability_lines.append(f"- {date_str} all day")
+                    else:
+                        # Format times in 12-hour format
+                        start_time = self._format_time_12hr(avail.start_time.strftime('%H:%M'))
+                        end_time = self._format_time_12hr(avail.end_time.strftime('%H:%M'))
+                        availability_lines.append(f"- {date_str} {start_time}-{end_time}")
+            
+            if not availability_lines:
+                return "- No specific times provided"
+                
+            return '\n'.join(availability_lines)
+            
+        except Exception as e:
+            logger.error(f"Error formatting guest availability details: {e}")
+            return "- Availability provided"
+
     def _send_planner_notification(self, guest_state: GuestState, guest: Guest) -> None:
         """Send immediate notification to planner when guest provides availability"""
         try:
             planner_name = guest_state.event.planner.name
             guest_name = self._extract_first_name(guest.name)
+            
+            # Get guest's availability details
+            availability_details = self._format_guest_availability_details(guest)
             
             # Count remaining guests who haven't responded
             total_guests = Guest.query.filter_by(event_id=guest_state.event_id).count()
@@ -189,12 +232,12 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
             
             # Create planner notification message
             if remaining_guests > 0:
-                planner_message = f"✅ {guest_name} has provided their availability!\n\n"
+                planner_message = f"✅ {guest_name} has provided their availability:\n{availability_details}\n\n"
                 planner_message += f"📊 {responded_guests}/{total_guests} guests have responded\n"
                 planner_message += f"⏳ Waiting for {remaining_guests} more guest" + ("s" if remaining_guests != 1 else "") + "\n\n"
                 planner_message += f"Press 1 to view current overlaps"
             else:
-                planner_message = f"✅ {guest_name} has provided their availability!\n\n"
+                planner_message = f"✅ {guest_name} has provided their availability:\n{availability_details}\n\n"
                 planner_message += f"🎉 Everyone has responded!\n\n"
                 planner_message += "Would you like to:\n"
                 planner_message += "1. Pick a time\n"
@@ -768,9 +811,12 @@ Examples (using actual event dates from context above):
                 ).count()
                 remaining_guests = total_guests - responded_guests
                 
+                # Get guest's availability details
+                availability_details = self._format_guest_availability_details(guest)
+                
                 if is_late_arrival:
                     # Late arrival - force planner back to overlap calculation
-                    planner_message = f"🎉 {guest_name} has provided their availability!\n\n"
+                    planner_message = f"🎉 {guest_name} has provided their availability:\n{availability_details}\n\n"
                     planner_message += "Everyone has responded!\n\n"
                     planner_message += "Would you like to:\n"
                     planner_message += "1. Pick a time\n"
@@ -782,13 +828,13 @@ Examples (using actual event dates from context above):
                     
                 elif remaining_guests > 0:
                     # Normal flow - still waiting for others
-                    planner_message = f"✅ {guest_name} has provided their availability!\n\n"
+                    planner_message = f"✅ {guest_name} has provided their availability:\n{availability_details}\n\n"
                     planner_message += f"📊 {responded_guests}/{total_guests} guests have responded\n"
                     planner_message += f"⏳ Waiting for {remaining_guests} more guest" + ("s" if remaining_guests != 1 else "") + "\n\n"
                     planner_message += f"Press 1 to view current overlaps"
                 else:
                     # Normal flow - everyone responded
-                    planner_message = f"✅ {guest_name} has provided their availability!\n\n"
+                    planner_message = f"✅ {guest_name} has provided their availability:\n{availability_details}\n\n"
                     planner_message += f"🎉 Everyone has responded!\n\n"
                     planner_message += "Would you like to:\n"
                     planner_message += "1. Pick a time\n"
