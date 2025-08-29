@@ -412,3 +412,60 @@ class MessageFormattingService:
         except Exception as e:
             logger.error(f"Error formatting guest list for invitation: {e}")
             return ""  # Don't show guest list if there's an error
+    
+    def format_guest_availability_details(self, guest) -> str:
+        """Format a guest's availability details for planner notifications"""
+        try:
+            from app.models.availability import Availability
+            from datetime import datetime
+            
+            # Get all availability records for this guest
+            availability_records = Availability.query.filter_by(guest_id=guest.id).all()
+            
+            if not availability_records:
+                return "- No specific availability provided"
+            
+            # Group availability by date
+            availability_by_date = {}
+            for record in availability_records:
+                if record.date:
+                    date_str = record.date.strftime('%A')  # e.g., "Friday"
+                    if date_str not in availability_by_date:
+                        availability_by_date[date_str] = []
+                    availability_by_date[date_str].append(record)
+            
+            if not availability_by_date:
+                return "- No specific availability provided"
+            
+            # Format each day's availability
+            formatted_lines = []
+            for date_str, records in availability_by_date.items():
+                # Check if any record is all day
+                all_day_records = [r for r in records if r.all_day]
+                if all_day_records:
+                    formatted_lines.append(f"- {date_str}: All day")
+                else:
+                    # Format time ranges
+                    time_ranges = []
+                    for record in records:
+                        if record.start_time and record.end_time:
+                            start_str = self._format_time_12hr(record.start_time.strftime('%H:%M'))
+                            end_str = self._format_time_12hr(record.end_time.strftime('%H:%M'))
+                            time_ranges.append(f"{start_str}-{end_str}")
+                        elif record.start_time:
+                            start_str = self._format_time_12hr(record.start_time.strftime('%H:%M'))
+                            time_ranges.append(f"after {start_str}")
+                        elif record.end_time:
+                            end_str = self._format_time_12hr(record.end_time.strftime('%H:%M'))
+                            time_ranges.append(f"until {end_str}")
+                    
+                    if time_ranges:
+                        formatted_lines.append(f"- {date_str}: {', '.join(time_ranges)}")
+                    else:
+                        formatted_lines.append(f"- {date_str}: Available")
+            
+            return '\n'.join(formatted_lines)
+            
+        except Exception as e:
+            logger.error(f"Error formatting guest availability details: {e}")
+            return "- Availability details unavailable"

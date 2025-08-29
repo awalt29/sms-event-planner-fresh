@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from app.models import BaseModel
 
@@ -17,6 +17,8 @@ class Guest(BaseModel):
     # RSVP tracking
     rsvp_status = Column(String(20), nullable=False, default='pending')
     availability_provided = Column(Boolean, nullable=False, default=False)
+    preferences_provided = Column(Boolean, nullable=False, default=False)
+    preferences = Column(Text, nullable=True)
     
     # Relationships
     event = relationship("Event", back_populates="guests")

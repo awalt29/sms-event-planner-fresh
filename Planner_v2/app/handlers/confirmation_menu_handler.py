@@ -17,7 +17,7 @@ class ConfirmationMenuHandler(BaseWorkflowHandler):
                     self.guest_service.send_availability_request(guest)
                 
                 return HandlerResult.success_response(
-                    "💌 Availability requests sent via SMS!\n\nSend 'Add Guests' to add more guests",
+                    "💌 Availability requests sent via SMS!\n\nSend 'Add Guests' to add more guests or 'Status' to see who haasn't responded.",
                     'collecting_availability'
                 )
                 

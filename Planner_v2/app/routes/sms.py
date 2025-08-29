@@ -126,9 +126,13 @@ class SMSRouter:
             
             # Normalize phone number
             normalized_phone = self._normalize_phone(phone_number)
+            logger.info(f"SMS Router - Original phone: {phone_number}, Normalized: {normalized_phone}")
             
             # Check if they're temporarily responding to an invitation/availability request
             guest_state = GuestState.query.filter_by(phone_number=normalized_phone).first()
+            logger.info(f"SMS Router - Guest state found: {guest_state is not None}")
+            if guest_state:
+                logger.info(f"SMS Router - Guest state: {guest_state.current_state}")
             
             if guest_state:
                 # Handle as guest (temporary override for responding to invitations)
@@ -229,13 +233,18 @@ class SMSRouter:
             
             if current_state == 'awaiting_availability':
                 return self._handle_availability_response(guest_state, message)
+            elif current_state == 'awaiting_preferences':
+                # Handle preferences workflow - delegate to availability handler
+                return self._handle_availability_response(guest_state, message)
             elif current_state == 'awaiting_rsvp':
                 return self._handle_rsvp_response(guest_state, message)
             elif current_state == 'completed':
                 # Guest session is complete, clean up and redirect to planner mode
                 return self._cleanup_guest_state_and_redirect(guest_state)
             else:
-                return self._cleanup_guest_state_and_redirect(guest_state)
+                # Unknown state - log error but don't cleanup, let the handler decide
+                logger.error(f"Unknown guest state: {current_state} for phone {guest_state.phone_number}")
+                return self._handle_availability_response(guest_state, message)
                 
         except Exception as e:
             logger.error(f"Error handling guest message: {e}")

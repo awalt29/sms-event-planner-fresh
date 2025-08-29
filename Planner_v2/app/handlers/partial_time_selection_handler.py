@@ -50,9 +50,11 @@ class PartialTimeSelectionHandler(BaseWorkflowHandler):
                     event.selected_start_time = parse_time_string(selected_overlap.get('start_time'))
                     event.selected_end_time = parse_time_string(selected_overlap.get('end_time'))
                     
-                    # Mark which guests are included in this partial selection
-                    responding_guest_ids = [guest.id for guest in event.guests if guest.availability_provided]
-                    event.notes = (event.notes or "") + f"\nPartial selection with guests: {responding_guest_ids}"
+                    # Store available guests for this selected time
+                    available_guests = selected_overlap.get('available_guests', [])
+                    import json
+                    current_notes = event.notes or ""
+                    event.notes = f"{current_notes}\nSelected available guests: {json.dumps(available_guests)}"
                     event.save()
                     
                     # Transition directly to activity collection (like normal flow)

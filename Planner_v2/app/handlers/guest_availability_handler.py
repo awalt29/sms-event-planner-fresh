@@ -30,13 +30,28 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
             
             # Handle follow-up commands (these should clean up the guest state)
             if message_lower == '1':
-                response = self._handle_send_availability(guest_state)
-                # Mark guest state for cleanup - let SMS router handle actual deletion
-                guest_state.current_state = 'completed'
-                guest_state.save()
-                return response
-            elif message_lower == '2' or message_lower == 'change':
-                return self._handle_change_availability(guest_state)
+                # Check if this is availability confirmation or final confirmation
+                if is_in_menu_confirmation:
+                    return self._handle_confirm_availability(guest_state)
+                else:
+                    # This might be final confirmation - check state
+                    state_data = guest_state.get_state_data()
+                    if state_data.get('awaiting_final_choice', False):
+                        return self._handle_send_final_availability(guest_state)
+            elif message_lower == '2':
+                # Check if this is change availability or change preferences  
+                if is_in_menu_confirmation:
+                    return self._handle_change_availability(guest_state)
+                else:
+                    # This might be final confirmation - change availability
+                    state_data = guest_state.get_state_data()
+                    if state_data.get('awaiting_final_choice', False):
+                        return self._handle_change_availability_final(guest_state)
+            elif message_lower == '3':
+                # This should be change preferences in final confirmation
+                state_data = guest_state.get_state_data()
+                if state_data.get('awaiting_final_choice', False):
+                    return self._handle_change_preferences(guest_state)
                 # Keep guest state active for new availability input
             elif message_lower == 'status':
                 return self._handle_status_request(guest_state)
@@ -49,9 +64,14 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
                 # Handle guests who are not available for any of the proposed days
                 return self._handle_busy_response(guest_state)
             
+            # Check if we're awaiting preferences
+            state_data = guest_state.get_state_data()
+            if guest_state.current_state == 'awaiting_preferences':
+                return self._handle_preferences_response(guest_state, message)
+            
             # If user is in menu confirmation state and didn't choose 1 or 2, give menu error
             if is_in_menu_confirmation:
-                return "Please respond with '1' or '2':\n\n1. Send Availability\n2. Change Availability"
+                return "Please respond with '1' or '2':\n\n1. Confirm availability\n2. Change availability"
             
             # Parse availability using distributed AI parsing
             context = guest_state.get_state_data()
@@ -118,29 +138,29 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
                     )
                     
                     if success:
-                        # Mark guest as having provided availability
-                        guest.availability_provided = True
-                        guest.save()
+                        # Don't mark as complete yet - we need preferences first
+                        # guest.availability_provided = True  # Comment out this line
+                        # guest.save()
+                        pass
                     
                     # Format confirmation response
-                    response_text = "Got it! Here's your availability:\n\n"
+                    response_text = "Got it! Here's what I recorded:\n\n"
+                    response_text += "📅 Your availability:\n"
                     for avail_data in valid_entries:
                         date_obj = datetime.strptime(avail_data['date'], '%Y-%m-%d').date()
-                        # Format as "Thu 8/7: 3pm to 11:59pm" style with day and date
-                        day_name = date_obj.strftime('%a')
-                        date_short = date_obj.strftime('%-m/%-d')
+                        # Format as day name with readable time
+                        day_name = date_obj.strftime('%A')
                         start_time = self._format_time_12hr(avail_data['start_time'])
                         end_time = self._format_time_12hr(avail_data['end_time'])
-                        response_text += f"- {day_name} {date_short}: {start_time} to {end_time}\n"
+                        response_text += f"- {day_name} {start_time}-{end_time}\n"
                     
-                    response_text += "\nWould you like to:\n"
-                    response_text += "1. Send Availability\n"
-                    response_text += "2. Change Availability\n\n"
-                    response_text += "Reply with 1 or 2"
+                    response_text += "\n1. Confirm availability\n"
+                    response_text += "2. Change availability"
                     
                     # Mark that user is now awaiting menu choice
                     state_data = guest_state.get_state_data()
                     state_data['awaiting_menu_choice'] = True
+                    state_data['availability_data'] = valid_entries  # Store for later use
                     guest_state.set_state_data(state_data)
                     guest_state.save()
                     
@@ -173,11 +193,57 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
         # If all parts are titles, just use the first one
         return name_parts[0]
 
+    def _format_guest_availability_details(self, guest: Guest) -> str:
+        """Format guest's availability details for planner notification"""
+        try:
+            from app.models.availability import Availability
+            from datetime import datetime
+            
+            # Get all availability records for this guest
+            availability_records = Availability.query.filter_by(
+                event_id=guest.event_id,
+                guest_id=guest.id
+            ).all()
+            
+            if not availability_records:
+                return "- No specific times provided"
+            
+            # Group by date and format
+            availability_lines = []
+            
+            for avail in availability_records:
+                if avail.date:
+                    # Format date as "Friday"
+                    date_str = avail.date.strftime('%A')
+                    
+                    if avail.all_day:
+                        availability_lines.append(f"- {date_str} all day")
+                    else:
+                        # Format times in 12-hour format
+                        start_time = self._format_time_12hr(avail.start_time.strftime('%H:%M'))
+                        end_time = self._format_time_12hr(avail.end_time.strftime('%H:%M'))
+                        availability_lines.append(f"- {date_str} {start_time}-{end_time}")
+            
+            if not availability_lines:
+                return "- No specific times provided"
+            
+            # Return just the availability lines - preferences handled separately in notifications
+            result = '\n'.join(availability_lines)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error formatting guest availability details: {e}")
+            return "- Availability provided"
+
     def _send_planner_notification(self, guest_state: GuestState, guest: Guest) -> None:
         """Send immediate notification to planner when guest provides availability"""
         try:
             planner_name = guest_state.event.planner.name
             guest_name = self._extract_first_name(guest.name)
+            
+            # Get guest's availability details
+            availability_details = self._format_guest_availability_details(guest)
             
             # Count remaining guests who haven't responded
             total_guests = Guest.query.filter_by(event_id=guest_state.event_id).count()
@@ -189,12 +255,12 @@ class GuestAvailabilityHandler(BaseWorkflowHandler):
             
             # Create planner notification message
             if remaining_guests > 0:
-                planner_message = f"✅ {guest_name} has provided their availability!\n\n"
+                planner_message = f"✅ {guest_name} has provided their availability:\n\n{availability_details}\n\n"
                 planner_message += f"📊 {responded_guests}/{total_guests} guests have responded\n"
                 planner_message += f"⏳ Waiting for {remaining_guests} more guest" + ("s" if remaining_guests != 1 else "") + "\n\n"
                 planner_message += f"Press 1 to view current overlaps"
             else:
-                planner_message = f"✅ {guest_name} has provided their availability!\n\n"
+                planner_message = f"✅ {guest_name} has provided their availability:\n{availability_details}\n\n"
                 planner_message += f"🎉 Everyone has responded!\n\n"
                 planner_message += "Would you like to:\n"
                 planner_message += "1. Pick a time\n"
@@ -768,9 +834,12 @@ Examples (using actual event dates from context above):
                 ).count()
                 remaining_guests = total_guests - responded_guests
                 
+                # Get guest's availability details
+                availability_details = self._format_guest_availability_details(guest)
+                
                 if is_late_arrival:
                     # Late arrival - force planner back to overlap calculation
-                    planner_message = f"🎉 {guest_name} has provided their availability!\n\n"
+                    planner_message = f"🎉 {guest_name} has provided their availability:\n\n{availability_details}\n\n"
                     planner_message += "Everyone has responded!\n\n"
                     planner_message += "Would you like to:\n"
                     planner_message += "1. Pick a time\n"
@@ -782,13 +851,13 @@ Examples (using actual event dates from context above):
                     
                 elif remaining_guests > 0:
                     # Normal flow - still waiting for others
-                    planner_message = f"✅ {guest_name} has provided their availability!\n\n"
+                    planner_message = f"✅ {guest_name} has provided their availability:\n\n{availability_details}\n\n"
                     planner_message += f"📊 {responded_guests}/{total_guests} guests have responded\n"
                     planner_message += f"⏳ Waiting for {remaining_guests} more guest" + ("s" if remaining_guests != 1 else "") + "\n\n"
                     planner_message += f"Press 1 to view current overlaps"
                 else:
                     # Normal flow - everyone responded
-                    planner_message = f"✅ {guest_name} has provided their availability!\n\n"
+                    planner_message = f"✅ {guest_name} has provided their availability:\n\n{availability_details}\n\n"
                     planner_message += f"🎉 Everyone has responded!\n\n"
                     planner_message += "Would you like to:\n"
                     planner_message += "1. Pick a time\n"
@@ -1061,6 +1130,235 @@ Examples (using actual event dates from context above):
             # If no patterns matched, it's not a valid availability input
             logger.info(f"Input validation for '{message}': INVALID - no patterns matched (single_day: {is_single_day})")
             return False
+            
+        except Exception as e:
+            logger.error(f"Error validating availability input: {e}")
+            return False
+    
+    # NEW METHODS FOR PREFERENCES WORKFLOW
+    
+    def _handle_confirm_availability(self, guest_state: GuestState) -> str:
+        """Handle availability confirmation - transition to preferences request"""
+        try:
+            # Send preferences request
+            guest_name = self._get_guest_name(guest_state)
+            
+            message = f"✅Confirmed! Do you have any activity preferences?\n\n"
+            message += "Examples:\n"
+            message += "- \"Let's do something outdoors\"\n"
+            message += "- \"Drinks\"\n"
+            message += "- \"Italian food\"\n"
+            message += "- \"None\"\n\n"
+            message += "Just reply with your thoughts! 💭"
+            
+            # Update state
+            guest_state.current_state = 'awaiting_preferences'
+            state_data = guest_state.get_state_data()
+            state_data['awaiting_menu_choice'] = False
+            guest_state.set_state_data(state_data)
+            guest_state.save()
+            
+            return message
+            
+        except Exception as e:
+            logger.error(f"Error handling availability confirmation: {e}")
+            return "Sorry, something went wrong. Please try again."
+    
+    def _handle_preferences_response(self, guest_state: GuestState, message: str) -> str:
+        """Handle guest preferences response"""
+        try:
+            # Get the guest record and save preferences
+            guest = self._get_guest_record(guest_state)
+            if not guest:
+                logger.error(f"Could not find guest record for state: {guest_state.phone_number}")
+                return "Sorry, something went wrong. Please try again."
+                
+            # Save preferences
+            guest.preferences = message.strip()
+            guest.preferences_provided = True
+            guest.save()
+            logger.info(f"Saved preferences for guest {guest.name}: {guest.preferences}")
+            
+            # Get availability data from state for final confirmation
+            state_data = guest_state.get_state_data()
+            availability_data = state_data.get('availability_data', [])
+            
+            if not availability_data:
+                logger.error(f"No availability data found in guest state for {guest_state.phone_number}")
+                return "Sorry, I couldn't find your availability information. Please start over."
+            
+            # Format final confirmation
+            response_text = "Got it! Let me confirm everything:\n\n"
+            response_text += "📅 Your availability:\n\n"
+            for avail_data in availability_data:
+                try:
+                    date_obj = datetime.strptime(avail_data['date'], '%Y-%m-%d').date()
+                    day_name = date_obj.strftime('%A')
+                    start_time = self._format_time_12hr(avail_data['start_time'])
+                    end_time = self._format_time_12hr(avail_data['end_time'])
+                    response_text += f"- {day_name} {start_time}-{end_time}\n"
+                except Exception as e:
+                    logger.error(f"Error formatting availability data: {e}")
+                    response_text += f"- {avail_data.get('date', 'Unknown date')}\n"
+            
+            response_text += f"\nActivity preference: {message.strip()}\n\n"
+            response_text += "Is this all correct?\n\n"
+            response_text += "1. Yes, send to planner\n"
+            response_text += "2. Change my availability\n" 
+            response_text += "3 Change my preferences"
+            
+            # Update state for final confirmation
+            state_data['awaiting_final_choice'] = True
+            state_data['awaiting_menu_choice'] = False  # Clear old menu state
+            guest_state.set_state_data(state_data)
+            guest_state.save()
+            logger.info(f"Updated guest state to awaiting_final_choice for {guest_state.phone_number}")
+            
+            return response_text
+            
+        except Exception as e:
+            logger.error(f"Error handling preferences response: {e}", exc_info=True)
+            return "Sorry, something went wrong. Please try again."
+    
+    def _handle_send_final_availability(self, guest_state: GuestState) -> str:
+        """Send final availability to planner with preferences"""
+        try:
+            # Get the guest record
+            guest = self._get_guest_record(guest_state)
+            if guest:
+                # Mark as complete
+                guest.availability_provided = True
+                guest.preferences_provided = True
+                guest.save()
+                
+                # Send planner notification
+                self._send_enhanced_planner_notification(guest_state, guest)
+                
+                # Mark guest state for cleanup
+                guest_state.current_state = 'completed'
+                guest_state.save()
+                
+                # Safely get planner name
+                try:
+                    event = guest_state.event
+                    planner_name = event.planner.name if event and event.planner and event.planner.name else "your planner"
+                except Exception:
+                    planner_name = "your planner"
+                
+                return f"Perfect! Thanks for sharing your availability and preferences. {planner_name} will use this to plan something great! 🎯"
+            
+            return "Thanks! Your information has been sent."
+            
+        except Exception as e:
+            logger.error(f"Error sending final availability: {e}")
+            return "Thanks! Your information has been sent."
+    
+    def _handle_change_availability_final(self, guest_state: GuestState) -> str:
+        """Handle changing availability from final confirmation"""
+        try:
+            # Reset to availability input state
+            guest_state.current_state = 'awaiting_availability'
+            state_data = guest_state.get_state_data()
+            state_data['awaiting_menu_choice'] = False
+            state_data['awaiting_final_choice'] = False
+            guest_state.set_state_data(state_data)
+            guest_state.save()
+            
+            return "No problem! Please provide your updated availability:"
+            
+        except Exception as e:
+            logger.error(f"Error handling availability change: {e}")
+            return "No problem! Please provide your updated availability:"
+    
+    def _handle_change_preferences(self, guest_state: GuestState) -> str:
+        """Handle changing preferences from final confirmation"""
+        try:
+            # Reset to preferences state
+            guest_state.current_state = 'awaiting_preferences'
+            state_data = guest_state.get_state_data()
+            state_data['awaiting_final_choice'] = False
+            guest_state.set_state_data(state_data)
+            guest_state.save()
+            
+            message = "No problem! What are your preferences for the hangout?\n\n"
+            message += "Examples:\n"
+            message += "- \"Let's do something outdoors\"\n"
+            message += "- \"Drinks\"\n"
+            message += "- \"Italian food\"\n"
+            message += "- \"None\"\n\n"
+            message += "Just reply with your thoughts! 💭"
+            
+            return message
+            
+        except Exception as e:
+            logger.error(f"Error handling preferences change: {e}")
+            return "No problem! What are your preferences for the hangout?"
+    
+    def _get_guest_record(self, guest_state: GuestState) -> Guest:
+        """Get guest record with phone number format handling"""
+        guest = Guest.query.filter_by(
+            event_id=guest_state.event_id,
+            phone_number=guest_state.phone_number
+        ).first()
+        
+        # If not found, try with +1 prefix format
+        if not guest:
+            formatted_phone = f"+1{guest_state.phone_number}"
+            guest = Guest.query.filter_by(
+                event_id=guest_state.event_id,
+                phone_number=formatted_phone
+            ).first()
+        
+        return guest
+    
+    def _get_guest_name(self, guest_state: GuestState) -> str:
+        """Get guest first name"""
+        guest = self._get_guest_record(guest_state)
+        return self._extract_first_name(guest.name) if guest else "Friend"
+    
+    def _send_enhanced_planner_notification(self, guest_state: GuestState, guest: Guest) -> None:
+        """Send enhanced planner notification with preferences"""
+        try:
+            planner_name = guest_state.event.planner.name
+            guest_name = self._extract_first_name(guest.name)
+            
+            # Get guest's availability details
+            availability_details = self._format_guest_availability_details(guest)
+            
+            # Count remaining guests who haven't responded
+            total_guests = Guest.query.filter_by(event_id=guest_state.event_id).count()
+            responded_guests = Guest.query.filter_by(
+                event_id=guest_state.event_id, 
+                availability_provided=True
+            ).count()
+            remaining_guests = total_guests - responded_guests
+            
+            # Create enhanced planner notification message
+            planner_message = f"✅ {guest_name} has provided their availability:\n\n{availability_details}\n"
+            
+            # Add preferences
+            if guest.preferences:
+                planner_message += f"\n💭 Preferences: \"{guest.preferences}\"\n"
+            else:
+                planner_message += f"\n💭 Preferences: No specific preferences\n"
+            
+            if remaining_guests > 0:
+                planner_message += f"\n📊 {responded_guests}/{total_guests} guests have responded\n"
+                planner_message += f"⏳ Waiting for {remaining_guests} more guest" + ("s" if remaining_guests != 1 else "") + "\n\n"
+                planner_message += f"Press 1 to view current overlaps"
+            else:
+                planner_message += f"\n🎉 Everyone has responded!\n\n"
+                planner_message += "Would you like to:\n"
+                planner_message += "1. Pick a time\n"
+                planner_message += "2. Add more guests"
+            
+            # Send SMS to planner
+            planner_phone = guest_state.event.planner.phone_number
+            self.sms_service.send_sms(planner_phone, planner_message)
+            logger.info(f"Sent enhanced planner notification to {planner_phone} about {guest_name}'s availability and preferences")
+            
+        except Exception as e:
+            logger.error(f"Error sending enhanced planner notification: {e}")
             
         except Exception as e:
             logger.error(f"Error validating input: {e}")
