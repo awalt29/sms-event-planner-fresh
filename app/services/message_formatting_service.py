@@ -254,8 +254,9 @@ class MessageFormattingService:
                 time_str = f"{start_12hr}-{end_12hr}"
             
             guest_count = overlap.get('guest_count', 0)
-            total_guests = len(overlap.get('available_guests', []))
-            attendance = round((guest_count / max(total_guests, 1)) * 100)
+            # Get total guests in the event for proper attendance calculation
+            event_total_guests = len(event.guests) if event else guest_count
+            attendance = round((guest_count / max(event_total_guests, 1)) * 100)
             
             response_text += f"{i}. {formatted_date}: {time_str}\n"
             response_text += f"Attendance: {attendance}%\n"
